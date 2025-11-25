@@ -453,6 +453,10 @@
     display: grid;
   }
 
+  .hidden {
+    display: none;
+  }
+
   .h-2 {
     height: calc(var(--spacing) * 2);
   }
@@ -487,6 +491,10 @@
 
   .h-fit {
     height: fit-content;
+  }
+
+  .max-h-\[300px\] {
+    max-height: 300px;
   }
 
   .min-h-screen {
@@ -529,6 +537,10 @@
     width: 1px;
   }
 
+  .max-w-\[180px\] {
+    max-width: 180px;
+  }
+
   .max-w-\[1440px\] {
     max-width: 1440px;
   }
@@ -567,6 +579,10 @@
 
   .grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .grid-cols-\[1fr_320px\] {
@@ -645,6 +661,16 @@
 
   .gap-y-5 {
     row-gap: calc(var(--spacing) * 5);
+  }
+
+  .truncate {
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .overflow-y-auto {
+    overflow-y: auto;
   }
 
   .rounded {
@@ -859,6 +885,16 @@
 
   .text-white {
     color: var(--color-white);
+  }
+
+  .text-white\/80 {
+    color: #fffc;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .text-white\/80 {
+      color: color-mix(in oklab, var(--color-white) 80%, transparent);
+    }
   }
 
   .tabular-nums {
