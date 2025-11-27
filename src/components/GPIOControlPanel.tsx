@@ -1,5 +1,5 @@
-import { Power, Gauge } from 'lucide-react';
-import { useState } from 'react';
+import React, { useState } from 'react';
+import { Power, Gauge, Clock } from 'lucide-react';
 
 interface GPIOControlPanelProps {
   gpioStates: boolean[];
@@ -8,6 +8,8 @@ interface GPIOControlPanelProps {
   setMotorOn: (value: boolean) => void;
   motorSpeed: number;
   setMotorSpeed: (value: number) => void;
+  motorTime: number;
+  setMotorTime: (value: number) => void;
 }
 
 export function GPIOControlPanel({
@@ -17,14 +19,17 @@ export function GPIOControlPanel({
   setMotorOn,
   motorSpeed,
   setMotorSpeed,
+  motorTime,
+  setMotorTime,
 }: GPIOControlPanelProps) {
   const [showSpeedControl, setShowSpeedControl] = useState(false);
+  const [showTimeControl, setShowTimeControl] = useState(false);
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
       <div className="flex items-center gap-3 mb-6">
         <div className="w-1 h-8 bg-gradient-to-b from-[#0A4D68] to-[#0A84FF] rounded-full"></div>
-        <h2 className="text-[#0A4D68]">GPIO 제어</h2>
+        <h2 className="text-[#0A4D68]">수동 제어</h2>
       </div>
 
       {/* GPIO Toggles */}
@@ -98,6 +103,7 @@ export function GPIOControlPanel({
 
       {/* Motor Controls */}
       <div className="space-y-4">
+        {/* Motor Speed Control */}
         <div className="flex items-center justify-between">
           <span className="text-slate-700">MOTOR Speed</span>
           <button
@@ -117,7 +123,10 @@ export function GPIOControlPanel({
               max="2000"
               step="10"
               value={motorSpeed}
-              onChange={(e) => setMotorSpeed(parseInt(e.target.value))}
+              onChange={(e) => {
+                const newSpeed = parseInt(e.target.value);
+                setMotorSpeed(newSpeed);
+              }}
               className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#0A84FF]"
             />
             <div className="flex justify-between">
@@ -134,6 +143,47 @@ export function GPIOControlPanel({
           </div>
         )}
 
+        {/* Motor Time Control */}
+        <div className="flex items-center justify-between">
+          <span className="text-slate-700">MOTOR Time</span>
+          <button
+            onClick={() => setShowTimeControl(!showTimeControl)}
+            className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#0A4D68] to-[#0A84FF] text-white hover:shadow-lg transition-all duration-300 flex items-center gap-2"
+          >
+            <Clock className="w-4 h-4" />
+            {motorTime} s
+          </button>
+        </div>
+
+        {showTimeControl && (
+          <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+            <input
+              type="range"
+              min="0"
+              max="60"
+              step="1"
+              value={motorTime}
+              onChange={(e) => {
+                const newTime = parseInt(e.target.value);
+                setMotorTime(newTime);
+              }}
+              className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#0A84FF]"
+            />
+            <div className="flex justify-between">
+              {[0, 15, 30, 45, 60].map((val) => (
+                <button
+                  key={val}
+                  onClick={() => setMotorTime(val)}
+                  className="px-3 py-1 text-slate-600 hover:bg-white hover:text-[#0A4D68] rounded transition-all"
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Motor ON/OFF Toggle */}
         <div className="flex items-center justify-between">
           <span className="text-slate-700">MOTOR ON/OFF</span>
           <button

@@ -1,14 +1,39 @@
 import { Cpu, BookOpen, Play, Square, Download } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
 
-export function FunctionButtonPanel() {
+interface FunctionButtonPanelProps {
+  selectedUnitId: number;
+  onUnitIdChange: (unitId: number) => void;
+}
+
+export function FunctionButtonPanel({ 
+  selectedUnitId, 
+  onUnitIdChange 
+}: FunctionButtonPanelProps) {
   const [showUnitSelector, setShowUnitSelector] = useState(false);
-  const [selectedUnit, setSelectedUnit] = useState<number | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null);
   const [selectedFirmware, setSelectedFirmware] = useState<string | null>(null);
+  
+  const { lastMessage, sendMessage } = useWebSocket();
+  const [isPiConnected, setIsPiConnected] = useState(false);
+
+  useEffect(() => {
+    if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {
+      setIsPiConnected(lastMessage?.data?.connected);
+    }
+  }, [lastMessage]);
 
   const handleUnitSelect = (unitNumber: number) => {
-    setSelectedUnit(unitNumber);
+    const unitId = unitNumber - 1;
+    onUnitIdChange(unitId); // 1-32를 0-31로 변환
+    
+    // Send selection to backend via WebSocket
+    sendMessage({
+      type: 'UNIT_SELECT',
+      unit_id: unitId
+    });
+    
     setShowUnitSelector(false);
   };
 
@@ -32,7 +57,7 @@ export function FunctionButtonPanel() {
       label: '유닛보드 선택', 
       color: 'from-[#0A4D68] to-[#0A84FF]',
       onClick: () => setShowUnitSelector(!showUnitSelector),
-      info: selectedUnit ? `유닛 ${selectedUnit}` : null
+      info: selectedUnitId !== null ? `유닛 ${selectedUnitId + 1}` : null
     },
     { 
       icon: BookOpen, 
@@ -104,7 +129,7 @@ export function FunctionButtonPanel() {
                         onClick={() => handleUnitSelect(num)}
                         className={`
                           px-3 py-2 rounded-lg transition-all
-                          ${selectedUnit === num 
+                          ${selectedUnitId === num - 1 
                             ? 'bg-gradient-to-r from-[#0A4D68] to-[#0A84FF] text-white shadow-md' 
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                           }
@@ -150,8 +175,10 @@ export function FunctionButtonPanel() {
           <div className="flex items-center justify-between">
             <span className="text-slate-500">연결 상태</span>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              <span className="text-emerald-600">연결됨</span>
+              <div className={`w-2 h-2 rounded-full ${isPiConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+              <span className={isPiConnected ? 'text-emerald-600' : 'text-slate-500'}>
+                {isPiConnected ? '연결됨' : '연결 끊김'}
+              </span>
             </div>
           </div>
           <div className="flex items-center justify-between">

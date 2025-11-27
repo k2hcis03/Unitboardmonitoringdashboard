@@ -1,33 +1,101 @@
 import { Thermometer, Droplets, Wind, Gauge, Activity, Scale } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
 
-export function StatusMonitoringCard() {
-  // 센서에서 읽어온 실제 상태값 (독립적)
-  const sensorData = [
-    { icon: Thermometer, name: '온도센서1', value: '12.5', unit: '°C' },
-    { icon: Thermometer, name: '온도센서2', value: '12.3', unit: '°C' },
-    { icon: Thermometer, name: '온도센서3', value: '34.4', unit: '°C' },
-    { icon: Thermometer, name: '온도센서4', value: '20.2', unit: '°C' },
-    { icon: Droplets, name: 'pH 센서', value: '12.3', unit: 'pH' },
-    { icon: Wind, name: 'CO₂ 센서', value: '12.3', unit: 'ppm' },
-    { icon: Activity, name: '유량 센서', value: '34.4', unit: 'L/min' },
-    { icon: Gauge, name: '당도 센서', value: '20.2', unit: 'Brix' },
-    { icon: Scale, name: '로드셀', value: '125.8', unit: 'kg' },
-  ];
+interface StatusMonitoringCardProps {
+  selectedUnitId: number;
+}
 
-  // 유닛보드에서 읽어온 실제 상태값 (독립적)
-  const statusData = [
-    { name: '모터 속도', value: '1250 RPM', highlight: true },
-    { name: '밸브1', value: 'ON', isOn: true },
-    { name: '밸브2', value: 'OFF', isOn: false },
-    { name: '밸브3', value: 'ON', isOn: true },
-    { name: '밸브4', value: 'OFF', isOn: false },
-  ];
+// Sensor Value Structure from Backend
+interface SensorValue {
+  TANK_ID: number;
+  SENSOR_ID: number;
+  VALUE: string;
+}
+
+// Sensor Packet Structure from Backend
+interface SensorPacket {
+  CMD: string;
+  VALUES: SensorValue[];
+  // ... other fields like STATE, ORDER, DATE, TIME if needed
+}
+
+export function StatusMonitoringCard({ selectedUnitId }: StatusMonitoringCardProps) {
+  const { lastMessage } = useWebSocket();
+  
+  // Store latest sensor values by TANK_ID and SENSOR_ID
+  // Map<tankId, Map<sensorId, value>>
+  const [sensorValues, setSensorValues] = useState<Record<number, Record<number, string>>>({});
+
+  useEffect(() => {
+    if (lastMessage?.type === 'SENSOR_UPDATE') {
+      const packet = lastMessage.data as SensorPacket;
+      
+      if (packet.VALUES && Array.isArray(packet.VALUES)) {
+        setSensorValues(prev => {
+          const next = { ...prev };
+          
+          packet.VALUES.forEach(item => {
+            const tankId = Number(item.TANK_ID);
+            const sensorId = Number(item.SENSOR_ID);
+            
+            if (!next[tankId]) {
+              next[tankId] = {};
+            }
+            // Create a new object for the tank to ensure React detects change
+            next[tankId] = {
+                ...next[tankId],
+                [sensorId]: item.VALUE
+            };
+          });
+          
+          return next;
+        });
+      }
+    }
+  }, [lastMessage]);
+
+  // Helper to get value for current selected unit
+  // User Requirement: 
+  // "유닛보드 1번을 선택하면 라즈베리파이에서 전송하는 센서 데이터 TANK_ID가 101번일 때야."
+  // "유닛보드 0는 무시"
+  // Mapping: Unit 1 (selectedUnitId=0 in code because of 0-index from FunctionButtonPanel)
+  // So if selectedUnitId is 0 (which means Unit 1), we want TANK_ID 101.
+  // Formula: 101 + selectedUnitId
+  const currentTankId = 101 + selectedUnitId; 
+  
+  const getValue = (sensorId: number, defaultValue: string) => {
+    return sensorValues[currentTankId]?.[sensorId] || defaultValue;
+  };
+
+  // 센서 데이터 구성
+  const sensorData = useMemo(() => [
+    { icon: Thermometer, name: '온도센서1', value: getValue(100, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서2', value: getValue(101, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서3', value: getValue(102, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서4', value: getValue(103, '0.0'), unit: '°C' },
+    { icon: Droplets, name: 'pH 센서', value: getValue(800, '0.0'), unit: 'pH' },
+    { icon: Wind, name: 'CO₂ 센서', value: getValue(300, '0.0'), unit: 'ppm' },
+    { icon: Activity, name: '유량 센서', value: getValue(700, '0.0'), unit: 'L/min' },
+    { icon: Gauge, name: '당도 센서', value: getValue(900, '0.0'), unit: 'Brix' }, 
+    { icon: Scale, name: '로드셀', value: getValue(400, '0.0'), unit: 'kg' },
+  ], [sensorValues, currentTankId]);
+
+  // 유닛보드 상태 데이터 구성
+  // 500~: Valves (500=V1, 501=V2...), 600: Motor Speed
+  const statusData = useMemo(() => [
+    { name: '모터 속도', value: getValue(600, '0') + ' RPM', highlight: true },
+    { name: '밸브1', value: getValue(500, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(500, '0') === '1' },
+    { name: '밸브2', value: getValue(501, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(501, '0') === '1' },
+    { name: '밸브3', value: getValue(502, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(502, '0') === '1' },
+    { name: '밸브4', value: getValue(503, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(503, '0') === '1' },
+  ], [sensorValues, currentTankId]);
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
       <div className="flex items-center gap-3 mb-6">
         <div className="w-1 h-8 bg-gradient-to-b from-[#0A4D68] to-[#0A84FF] rounded-full"></div>
-        <h2 className="text-[#0A4D68]">유닛보드 상태</h2>
+        <h2 className="text-[#0A4D68]">유닛보드 상태 (Unit {selectedUnitId + 1} / Tank {currentTankId})</h2>
       </div>
 
       {/* Sensor Values Grid */}

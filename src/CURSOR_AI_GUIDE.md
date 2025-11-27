@@ -3,123 +3,153 @@
 ## 🏗️ 프로젝트 구조
 
 ```
-unitboard-system/
-├── frontend/                    # React 프론트엔드
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── components/
-│   │   │   ├── StatusMonitoringCard.tsx
-│   │   │   ├── GPIOControlPanel.tsx
-│   │   │   └── FunctionButtonPanel.tsx
-│   │   ├── services/
-│   │   │   └── api.ts          # 백엔드 통신 API
-│   │   ├── hooks/
-│   │   │   └── useWebSocket.ts # 실시간 데이터 수신
-│   │   └── types/
-│   │       └── index.ts        # TypeScript 타입 정의
-│   └── package.json
+Unitboardmonitoringdashboard/
+├── src/                         # React 프론트엔드
+│   ├── App.tsx
+│   ├── components/
+│   │   ├── StatusMonitoringCard.tsx
+│   │   ├── GPIOControlPanel.tsx
+│   │   ├── FunctionButtonPanel.tsx
+│   │   └── ui/                  # shadcn/ui 컴포넌트
+│   ├── services/
+│   │   └── api.ts              # 백엔드 통신 API
+│   ├── hooks/
+│   │   └── useWebSocket.ts     # 실시간 데이터 수신
+│   └── main.tsx
 │
 └── backend/                     # Litestar 백엔드
-    ├── main.py                  # Litestar 앱 진입점
-    ├── routes/
-    │   ├── sensors.py           # 센서 데이터 엔드포인트
-    │   └── control.py           # GPIO/모터 제어 엔드포인트
-    ├── hardware/
-    │   ├── sensor_manager.py    # 센서 데이터 읽기
-    │   ├── gpio_controller.py   # GPIO 제어
-    │   └── motor_controller.py  # 모터 제어
-    └── requirements.txt
+    ├── main.py                  # 진입점 (uvicorn 실행)
+    ├── app/
+    │   ├── main.py             # Litestar 앱 정의
+    │   ├── config.py           # 설정 관리
+    │   ├── models/             # Pydantic 모델
+    │   │   ├── unit.py         # 유닛보드 상태 모델
+    │   │   ├── gpio.py         # GPIO 제어 모델
+    │   │   ├── sensor.py       # 센서 데이터 모델
+    │   ├── controllers/        # API 컨트롤러
+    │   │   ├── unit.py         # 유닛보드 상태 API
+    │   │   ├── gpio.py         # GPIO 제어 API
+    │   │   └── websocket.py    # WebSocket 핸들러
+    │   ├── services/           # 비즈니스 로직
+    │   │   ├── unit_manager.py # 유닛보드 관리
+    │   │   └── state_manager.py # 상태 관리
+    │   └── utils/
+    │       └── logger.py       # 로깅 설정
+    ├── requirements.txt
 ```
 
 ---
 
 ## 📡 API 설계
 
-### REST API 엔드포인트
+### REST API 엔드포인트 (웹 프론트엔드용)
 
-#### 1. 센서 데이터 조회
+#### 1. 유닛보드 상태 조회
 ```http
-GET /api/sensors/status
+GET /api/units/
+GET /api/units/{unit_id}
+GET /api/units/{unit_id}/gpio
 ```
-**응답:**
+**응답 예시:**
 ```json
 {
-  "temperature": {
-    "sensor1": 12.5,
-    "sensor2": 12.3,
-    "sensor3": 34.4,
-    "sensor4": 20.2
+  "unit_info": {
+    "unit_id": 0,
+    "name": "Unit 0",
+    "firmware_version": "v2.4.1",
+    "is_connected": true
   },
-  "ph": 12.3,
-  "co2": 12.3,
-  "flow": 34.4,
-  "brix": 20.2,
-  "loadcell": 125.8,
-  "motor_speed": 1250,
+  "sensors": {
+    "temperature_1": 12.5,
+    "temperature_2": 12.3,
+    "temperature_3": 34.4,
+    "temperature_4": 20.2,
+    "ph": 12.3,
+    "co2": 12.3,
+    "flow_rate": 34.4,
+    "brix": 20.2,
+    "load_cell": 125.8
+  },
+  "motor": {
+    "is_on": false,
+    "speed": 0
+  },
   "valves": {
-    "valve1": true,
-    "valve2": false,
-    "valve3": true,
-    "valve4": false
-  }
+    "valve_1": false,
+    "valve_2": false,
+    "valve_3": false,
+    "valve_4": false
+  },
+  "last_updated": "2024-01-01T00:00:00"
 }
 ```
 
-#### 2. GPIO 제어
+#### 2. GPIO 제어 (개별)
 ```http
-POST /api/control/gpio
+POST /api/gpio/control
 ```
 **요청:**
 ```json
 {
-  "gpio_number": 1,
+  "unit_id": 0,
+  "gpio_index": 0,
   "state": true
+}
+```
+
+#### 3. GPIO 일괄 제어 (모든 GPIO 상태 한 번에)
+```http
+POST /api/gpio/bulk
+```
+**요청:**
+```json
+{
+  "unit_id": 0,
+  "gpio_states": [true, false, true, false, false, false, false, false]
 }
 ```
 **응답:**
 ```json
 {
   "success": true,
-  "gpio_number": 1,
-  "state": true
+  "unit_id": 0,
+  "gpio_states": [true, false, true, false, false, false, false, false],
+  "results": [
+    {"gpio_index": 0, "state": true, "success": true},
+    ...
+  ]
 }
 ```
 
-#### 3. 모터 제어
+#### 4. 모터 제어
 ```http
-POST /api/control/motor
+POST /api/gpio/motor
 ```
 **요청:**
 ```json
 {
-  "on": true,
+  "unit_id": 0,
+  "is_on": true,
   "speed": 1500
-}
-```
-**응답:**
-```json
-{
-  "success": true,
-  "motor_on": true,
-  "motor_speed": 1500
 }
 ```
 
 ### WebSocket 엔드포인트
 
-#### 실시간 센서 데이터 스트리밍
+#### 실시간 상태 업데이트
 ```
-ws://localhost:8000/ws/sensors
+ws://localhost:8000/ws/status
 ```
 **메시지 형식:**
 ```json
 {
-  "type": "sensor_update",
-  "timestamp": "2025-11-25T10:30:00Z",
+  "type": "status_update",
+  "unit_id": 0,
   "data": {
-    "temperature1": 12.5,
-    "ph": 12.3,
-    ...
+    "sensors": {...},
+    "motor": {...},
+    "valves": {...},
+    "gpio": [true, false, ...]
   }
 }
 ```
@@ -131,68 +161,82 @@ ws://localhost:8000/ws/sensors
 ### 1️⃣ 백엔드 생성 (Litestar)
 
 ```
-@새파일 backend/main.py를 생성해줘
+@backend/app/main.py를 생성해줘
 
 Litestar를 사용한 백엔드 서버를 만들어줘:
 - CORS 설정 (프론트엔드 http://localhost:5173 허용)
-- REST API 라우트: /api/sensors/status, /api/control/gpio, /api/control/motor
-- WebSocket 엔드포인트: /ws/sensors (1초마다 센서 데이터 전송)
-- 현재는 더미 데이터 사용 (나중에 실제 하드웨어 연결)
+- REST API 라우트: 
+  - GET /api/units/ (모든 유닛보드 상태)
+  - GET /api/units/{unit_id} (특정 유닛보드 상태)
+  - POST /api/gpio/control (GPIO 개별 제어)
+  - POST /api/gpio/bulk (GPIO 일괄 제어)
+  - POST /api/gpio/motor (모터 제어)
+- WebSocket 엔드포인트: /ws/status (실시간 상태 업데이트)
 
-requirements.txt도 함께 만들어줘:
-- litestar
-- uvicorn
-- python-dotenv
+requirements.txt:
+- litestar>=2.0.0
+- uvicorn[standard]>=0.24.0
+- pydantic>=2.0.0
+- pydantic-settings>=2.0.0
+- websockets>=12.0
 ```
 
 ### 2️⃣ 프론트엔드 API 서비스 생성
 
 ```
-@새파일 frontend/src/services/api.ts를 생성해줘
+@src/services/api.ts를 생성해줘
 
 백엔드 API와 통신하는 서비스를 만들어줘:
-- axios 사용
-- BASE_URL: http://localhost:8000
-- getSensorStatus() - GET /api/sensors/status
-- controlGPIO(gpioNumber, state) - POST /api/control/gpio
-- controlMotor(on, speed) - POST /api/control/motor
+- fetch API 사용 (axios 대신)
+- BASE_URL: http://localhost:8000 (환경 변수로 설정 가능)
+- getAllUnitsStatus() - GET /api/units/
+- getUnitStatus(unitId) - GET /api/units/{unit_id}
+- getGPIOState(unitId) - GET /api/units/{unit_id}/gpio
+- controlGPIO(request) - POST /api/gpio/control (개별 제어)
+- controlGPIOBulk(request) - POST /api/gpio/bulk (일괄 제어)
+- controlMotor(request) - POST /api/gpio/motor
 - 에러 핸들링 포함
 ```
 
 ### 3️⃣ WebSocket Hook 생성
 
 ```
-@새파일 frontend/src/hooks/useWebSocket.ts를 생성해줘
+@src/hooks/useWebSocket.ts를 생성해줘
 
-WebSocket으로 실시간 센서 데이터를 받는 커스텀 훅을 만들어줘:
-- ws://localhost:8000/ws/sensors 연결
+WebSocket으로 실시간 상태 데이터를 받는 커스텀 훅을 만들어줘:
+- ws://localhost:8000/ws/status 연결
 - 자동 재연결 로직
-- 센서 데이터 state 관리
+- 유닛보드 상태 데이터 state 관리
 - 연결 상태 표시 (connected, disconnected, error)
+- 여러 유닛보드 상태 동시 관리
 ```
 
 ### 4️⃣ App.tsx 업데이트 (백엔드 연동)
 
 ```
-@App.tsx 를 수정해줘
+@src/App.tsx를 수정해줘
 
 백엔드와 연동하도록 변경해줘:
-1. useWebSocket 훅으로 실시간 센서 데이터 수신
-2. StatusMonitoringCard에 실시간 데이터 전달
-3. GPIO 토글 시 API 호출 (api.controlGPIO)
-4. 모터 속도 변경 시 API 호출 (api.controlMotor)
-5. 연결 상태 표시 (우측 상단에 LED 인디케이터)
+1. 유닛보드 ID 상태 관리 (기본값: 0)
+2. GPIO 상태 관리 (8개 GPIO)
+3. GPIO 토글 시 controlGPIOBulk() 호출 - 모든 GPIO 상태를 한 번에 전송
+4. 모터 제어 시 controlMotor() 호출
+5. FunctionButtonPanel에 유닛보드 선택 기능 연동
+6. 에러 발생 시 이전 상태로 롤백
 ```
 
 ### 5️⃣ StatusMonitoringCard 업데이트
 
 ```
-@StatusMonitoringCard.tsx 를 수정해줘
+@src/components/StatusMonitoringCard.tsx를 수정해줘
 
-Props로 실시간 센서 데이터를 받도록 변경해줘:
-- temperature1, temperature2, temperature3, temperature4
-- ph, co2, flow, brix, loadcell
-- motorSpeed, valve1, valve2, valve3, valve4
+백엔드에서 유닛보드 상태 데이터를 받아 표시하도록 변경해줘:
+- Props로 unitId와 UnitStatus 받기
+- 또는 useWebSocket 훅으로 실시간 데이터 수신
+- 센서 데이터: temperature_1~4, ph, co2, flow_rate, brix, load_cell
+- 모터 상태: motor.is_on, motor.speed
+- 밸브 상태: valves.valve_1~4
+- 유닛보드 연결 상태 표시
 
 Props 타입 정의도 추가해줘.
 ```
@@ -200,59 +244,32 @@ Props 타입 정의도 추가해줘.
 ### 6️⃣ GPIOControlPanel 업데이트
 
 ```
-@GPIOControlPanel.tsx 를 수정해줘
+@src/components/GPIOControlPanel.tsx를 수정해줘
 
 GPIO 토글/모터 제어 시 로딩 상태를 표시하도록 개선해줘:
 - 버튼 클릭 중 로딩 스피너 표시
 - API 호출 성공/실패 toast 알림 (sonner 사용)
 - 에러 발생 시 이전 상태로 롤백
+- GPIO 변경 시 모든 GPIO 상태를 일괄 전송 (controlGPIOBulk 사용)
 ```
 
 ---
 
-## 🔧 하드웨어 연동 가이드 (백엔드)
+## 🔧 시스템 아키텍처
 
-### 7️⃣ Raspberry Pi GPIO 연동
-
-```
-@backend/hardware/gpio_controller.py 를 생성해줘
-
-Raspberry Pi GPIO 제어 코드를 작성해줘:
-- RPi.GPIO 또는 gpiod 라이브러리 사용
-- GPIO 1-8번 핀 제어 함수
-- set_gpio(pin, state) 함수
-- get_gpio_state(pin) 함수
-- 안전한 초기화/정리 (cleanup) 포함
-```
-
-### 8️⃣ 센서 데이터 읽기
+### 통신 구조
 
 ```
-@backend/hardware/sensor_manager.py 를 생성해줘
-
-센서 데이터를 읽는 매니저 클래스를 만들어줘:
-- read_temperature(sensor_id) - I2C 온도 센서 읽기
-- read_ph() - pH 센서 읽기
-- read_co2() - CO2 센서 읽기
-- read_flow() - 유량 센서 읽기
-- read_brix() - 당도 센서 읽기
-- read_loadcell() - 로드셀 읽기 (HX711 사용)
-
-현재는 랜덤 데이터 반환, 나중에 실제 센서 코드로 교체 가능하도록 설계
+Windows PC Browser (프론트엔드)
+    ↓ REST API / WebSocket
+Litestar Backend (포트 8000)
 ```
 
-### 9️⃣ 모터 제어 (PWM)
+### 주요 특징
 
-```
-@backend/hardware/motor_controller.py 를 생성해줘
-
-모터 속도 제어 코드를 작성해줘:
-- PWM 방식으로 0-2000 RPM 제어
-- set_motor_speed(rpm) 함수
-- get_motor_speed() 함수
-- 모터 ON/OFF 함수
-- 안전 장치 (최대/최소 속도 제한)
-```
+1. **상태 관리**
+   - `StateManager`: 메모리 기반 상태 저장
+   - `UnitManager`: 유닛보드 제어 및 상태 관리
 
 ---
 
@@ -261,61 +278,91 @@ Raspberry Pi GPIO 제어 코드를 작성해줘:
 ### 백엔드 실행
 ```bash
 cd backend
+
+# 가상환경 생성 (처음 한 번만)
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 가상환경 활성화
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# Linux/Mac:
+source venv/bin/activate
+
+# 의존성 설치
 pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# 서버 실행
+python main.py
+# 또는
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+서버가 다음 주소에서 실행됩니다:
+- 웹 API: http://localhost:8000
+- API 문서: http://localhost:8000/docs
 
 ### 프론트엔드 실행
 ```bash
-cd frontend
+# 루트 디렉토리에서
 npm install
 npm run dev
 ```
+
+프론트엔드가 http://localhost:5173 에서 실행됩니다.
 
 ---
 
 ## 📝 TypeScript 타입 정의
 
 ```typescript
-// frontend/src/types/index.ts
+// src/services/api.ts에 정의됨
 
-export interface SensorData {
-  temperature: {
-    sensor1: number;
-    sensor2: number;
-    sensor3: number;
-    sensor4: number;
+export interface UnitStatus {
+  unit_info: {
+    unit_id: number;
+    name: string | null;
+    firmware_version: string | null;
+    is_connected: boolean;
   };
-  ph: number;
-  co2: number;
-  flow: number;
-  brix: number;
-  loadcell: number;
-  motor_speed: number;
+  sensors: {
+    temperature_1: number;
+    temperature_2: number;
+    temperature_3: number;
+    temperature_4: number;
+    ph: number;
+    co2: number;
+    flow_rate: number;
+    brix: number;
+    load_cell: number;
+  };
+  motor: {
+    is_on: boolean;
+    speed: number;
+  };
   valves: {
-    valve1: boolean;
-    valve2: boolean;
-    valve3: boolean;
-    valve4: boolean;
+    valve_1: boolean;
+    valve_2: boolean;
+    valve_3: boolean;
+    valve_4: boolean;
   };
+  last_updated: string;
 }
 
 export interface GPIOControlRequest {
-  gpio_number: number;
+  unit_id: number;
+  gpio_index: number;
   state: boolean;
 }
 
-export interface MotorControlRequest {
-  on: boolean;
-  speed: number;
+export interface GPIOBulkControlRequest {
+  unit_id: number;
+  gpio_states: boolean[]; // GPIO 1-8 상태
 }
 
-export interface APIResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
+export interface MotorControlRequest {
+  unit_id: number;
+  is_on: boolean;
+  speed?: number;
 }
 ```
 
@@ -349,19 +396,32 @@ export interface APIResponse<T> {
 
 ### 백엔드 테스트
 ```bash
-# API 테스트
-curl http://localhost:8000/api/sensors/status
+# 모든 유닛보드 상태 조회
+curl http://localhost:8000/api/units/
 
-# GPIO 제어 테스트
-curl -X POST http://localhost:8000/api/control/gpio \
+# 특정 유닛보드 상태 조회
+curl http://localhost:8000/api/units/0
+
+# GPIO 개별 제어
+curl -X POST http://localhost:8000/api/gpio/control \
   -H "Content-Type: application/json" \
-  -d '{"gpio_number": 1, "state": true}'
+  -d '{"unit_id": 0, "gpio_index": 0, "state": true}'
+
+# GPIO 일괄 제어
+curl -X POST http://localhost:8000/api/gpio/bulk \
+  -H "Content-Type: application/json" \
+  -d '{"unit_id": 0, "gpio_states": [true, false, true, false, false, false, false, false]}'
+
+# 모터 제어
+curl -X POST http://localhost:8000/api/gpio/motor \
+  -H "Content-Type: application/json" \
+  -d '{"unit_id": 0, "is_on": true, "speed": 1500}'
 ```
 
 ### WebSocket 테스트
 ```bash
 # websocat 설치 후
-websocat ws://localhost:8000/ws/sensors
+websocat ws://localhost:8000/ws/status
 ```
 
 ---
@@ -381,19 +441,40 @@ websocat ws://localhost:8000/ws/sensors
 ```
 이 프로젝트 구조를 기반으로 전체 시스템을 생성해줘:
 
-1. backend/ 폴더에 Litestar 기반 백엔드 생성
+1. backend/app/ 폴더에 Litestar 기반 백엔드 생성
    - main.py: CORS, REST API, WebSocket
-   - routes/: sensors.py, control.py
-   - hardware/: 하드웨어 제어 모듈 (현재는 더미 데이터)
+   - controllers/: unit.py, gpio.py, websocket.py
+   - services/: unit_manager.py, state_manager.py
+   - models/: unit.py, gpio.py, sensor.py
+   - config.py: 설정 관리
 
-2. frontend/ 폴더에 React 프론트엔드 연동
-   - services/api.ts: axios 기반 API 클라이언트
+2. src/ 폴더에 React 프론트엔드 연동
+   - services/api.ts: fetch 기반 API 클라이언트
    - hooks/useWebSocket.ts: 실시간 데이터 수신
-   - App.tsx 수정: 백엔드 연동
+   - App.tsx: 백엔드 연동, GPIO 일괄 제어
+   - components/: StatusMonitoringCard, GPIOControlPanel, FunctionButtonPanel
 
-3. 실시간 센서 데이터 스트리밍 (1초 간격)
+3. GPIO 제어 시 모든 GPIO 상태를 일괄 전송 (controlGPIOBulk)
 
-4. GPIO/모터 제어 시 즉시 백엔드로 전송
+5. 유닛보드 선택 기능 (최대 32개)
 
 모든 파일을 생성하고 README.md도 만들어줘.
 ```
+
+## 🔄 현재 구현 상태
+
+### ✅ 완료된 기능
+- [x] Litestar 백엔드 구조
+- [x] REST API 엔드포인트 (유닛보드, GPIO, 모터)
+- [x] GPIO 일괄 제어 API
+- [x] WebSocket 실시간 상태 업데이트
+- [x] 프론트엔드 API 클라이언트
+- [x] GPIO 제어 UI 연동
+- [x] 유닛보드 선택 기능
+
+### 🚧 향후 구현 예정
+- [ ] 레시피 실행 기능
+- [ ] 펌웨어 업데이트
+- [ ] 실시간 센서 데이터 WebSocket 연동
+- [ ] 상태 모니터링 카드 백엔드 연동
+- [ ] 에러 처리 및 로깅 개선

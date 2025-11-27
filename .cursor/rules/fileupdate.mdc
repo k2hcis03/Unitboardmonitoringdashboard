@@ -1,0 +1,8 @@
+---
+alwaysApply: true
+---
+
+파일 및 디렉토리 구조 그리고 프로토콜이 변경되면 아래 파일을 최신으로 업데이트 진행함
+1) JSON_SERVER_GUIDE.md
+2) CURSOR_AI_GUIDE.md
+3) README.md
