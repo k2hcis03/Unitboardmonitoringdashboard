@@ -38,6 +38,11 @@ class AckPacket(BaseModel):
     idx: Union[str, int] = Field(..., alias="IDX")
     note: str = Field("OK", alias="NOTE")
 
+class AckPacketInitialize(BaseModel):
+    cmd: str = Field("ACK_INITIALIZE", alias="CMD")
+    idx: Union[str, int] = Field(..., alias="IDX")
+    fw_version: int = Field(..., alias="FW_VERSION")
+    note: str = Field("OK", alias="NOTE")
 # -----------------------------------------------------------------------------
 # 3. Command Structures (PC -> Pi) - Placeholder for Port 7001
 # -----------------------------------------------------------------------------
@@ -92,5 +97,22 @@ class CommandPacketMotor(BaseModel):
     # Add other fields as needed for sending commands
     payload: Optional[dict] = Field(None, alias="PAYLOAD")
 
+    class Config:
+        populate_by_name = True
+
+class CommandPacketFirmware(BaseModel):
+    cmd: str = Field("FW_UPDATE", alias="CMD")
+    unit_id: Union[str, int] = Field(..., alias="UNIT_ID")
+    idx: Union[str, int] = Field(..., alias="IDX")
+    file: str = Field(..., alias="FILE")
+    send: bool = Field(False, alias="SEND")
+    class Config:
+        populate_by_name = True
+
+class CommandPacketGetVersion(BaseModel):
+    cmd: str = Field("GET_VERSION", alias="CMD")
+    unit_id: Union[str, int] = Field(..., alias="UNIT_ID")
+    idx: Union[str, int] = Field(..., alias="IDX")
+    send: bool = Field(False, alias="SEND")
     class Config:
         populate_by_name = True

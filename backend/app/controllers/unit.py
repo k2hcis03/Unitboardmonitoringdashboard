@@ -2,7 +2,7 @@
 from litestar import Controller, get, post
 from litestar.exceptions import NotFoundException
 from typing import Dict
-from app.models.unit import UnitStatus
+from app.models.unit import UnitStatus, FirmwareUpdateRequest
 from app.models.gpio import GPIOState
 from app.services.unit_manager import unit_manager
 
@@ -48,4 +48,19 @@ class UnitController(Controller):
         if gpio_state is None:
             raise NotFoundException(f"Unit {unit_id} not found")
         return gpio_state
+
+    @post("/{unit_id:int}/firmware", summary="펌웨어 업데이트")
+    async def update_firmware(self, unit_id: int, data: FirmwareUpdateRequest) -> Dict[str, bool]:
+        """펌웨어를 업데이트합니다.
+        
+        Args:
+            unit_id: 유닛보드 ID (0-31)
+            data: 펌웨어 파일 경로 정보
+            
+        Returns:
+            성공 여부
+        """
+        from app.services.tcp_bridge import tcp_bridge
+        success = await tcp_bridge.send_firmware_update(unit_id, data.file_path)
+        return {"success": success}
 

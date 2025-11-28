@@ -137,6 +137,16 @@ class APIClient {
   }
 
   /**
+   * 펌웨어 업데이트
+   */
+  async updateFirmware(unitId: number, filePath: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/api/units/${unitId}/firmware`, {
+      method: 'POST',
+      body: JSON.stringify({ file_path: filePath }),
+    });
+  }
+
+  /**
    * GPIO 일괄 제어 (모든 GPIO 상태를 한 번에 전송)
    */
   async controlGPIOBulk(request: GPIOBulkControlRequest): Promise<{ success: boolean }> {

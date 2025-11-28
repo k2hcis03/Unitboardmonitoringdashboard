@@ -1,6 +1,8 @@
 import { Cpu, BookOpen, Play, Square, Download } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+
+import { apiClient } from '../services/api';
 
 interface FunctionButtonPanelProps {
   selectedUnitId: number;
@@ -17,12 +19,37 @@ export function FunctionButtonPanel({
   
   const { lastMessage, sendMessage } = useWebSocket();
   const [isPiConnected, setIsPiConnected] = useState(false);
+  const [firmwareVersion, setFirmwareVersion] = useState<string>('v2.4.1');
 
   useEffect(() => {
     if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {
       setIsPiConnected(lastMessage?.data?.connected);
     }
+    
+    if (lastMessage?.type === 'ACK_INITIALIZE_RECEIVED') {
+      const data = lastMessage.data;
+      if (data && data.FW_VERSION) {
+         // FW_VERSION 값을 숫자로 변환 후 100으로 나누어 소수점 2자리까지 표시 (v 접두어 포함)
+         const versionNum = parseFloat(data.FW_VERSION);
+         if (!isNaN(versionNum)) {
+           setFirmwareVersion(`v${(versionNum / 100).toFixed(2)}`);
+         } else {
+           setFirmwareVersion(data.FW_VERSION); // 숫자가 아니면 그대로 표시
+         }
+      }
+    }
   }, [lastMessage]);
+
+  useEffect(() => {
+    // 초기 로드 시 유닛 1(index 0)에 대한 펌웨어 버전 요청을 위해 UNIT_SELECT 메시지 전송
+    if (isPiConnected) {
+        // 약간의 지연을 주어 연결 안정화 후 요청
+        const timer = setTimeout(() => {
+            handleUnitSelect(selectedUnitId + 1);
+        }, 500);
+        return () => clearTimeout(timer);
+    }
+  }, [isPiConnected, selectedUnitId]);
 
   const handleUnitSelect = (unitNumber: number) => {
     const unitId = unitNumber - 1;
@@ -44,10 +71,40 @@ export function FunctionButtonPanel({
     }
   };
 
-  const handleFirmwareSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFirmwareSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFirmware(file.name);
+      
+      try {
+        // 선택된 유닛보드 ID로 펌웨어 업데이트 요청 전송
+        // 주의: 브라우저 환경에서는 보안상 전체 파일 경로(C:\path\to\file.bin)를 알 수 없습니다.
+        // 하지만 사용자 요청에 따라 백엔드에 파일 처리를 위임하는 구조로 변경합니다.
+        // 여기서는 파일명만 전송하지만, 실제로는 파일을 업로드하거나
+        // 로컬 환경(Electron 등)이라면 전체 경로를 얻을 수 있습니다.
+        // 현재 웹 브라우저 환경에서는 파일 객체를 통해 업로드하는 방식이 일반적입니다.
+        
+        // 하지만 사용자의 요청인 "선택된 파일 디렉토리 정보부터 파일이름까지 포함된 정보"를 충족하기 위해
+        // 브라우저의 한계(fake path)를 설명하고, 대신 파일 자체를 업로드하는 방식을 유지하거나
+        // 로컬 개발 환경에서 테스트용으로 특정 경로를 가정하는 방식 등으로 구현해야 합니다.
+        
+        // 여기서는 파일 이름을 그대로 보내되, 백엔드에서 이를 처리하도록 합니다.
+        // 만약 Electron 등의 환경이라면 file.path로 전체 경로를 얻을 수 있습니다.
+        
+        // 웹 브라우저의 보안 정책으로 인해 실제 전체 경로(C:\...)는 JavaScript로 읽을 수 없습니다.
+        // 따라서 파일 이름만이라도 정확히 전송합니다.
+        console.log(`Firmware update request: Unit ${selectedUnitId}, File ${file.name}`);
+        
+        await apiClient.updateFirmware(selectedUnitId, file.name);
+        
+        console.log('Firmware update command sent successfully');
+      } catch (error) {
+        console.error('Failed to send firmware update command:', error);
+        alert('펌웨어 업데이트 명령 전송에 실패했습니다.');
+      }
+      
+      // 입력 초기화 (동일 파일 재선택 가능하게)
+      event.target.value = '';
     }
   };
 
@@ -183,7 +240,7 @@ export function FunctionButtonPanel({
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-500">펌웨어 버전</span>
-            <span className="text-slate-700">v2.4.1</span>
+            <span className="text-slate-700">{firmwareVersion}</span>
           </div>
         </div>
       </div>

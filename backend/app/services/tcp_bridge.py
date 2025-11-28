@@ -1,13 +1,17 @@
 import asyncio
 import json
 import logging
+import requests
+import configparser
+import os
 from typing import Optional, Dict, List, Union
 from pydantic import ValidationError
 
-from app.models.protocol import SensorPacket, AckPacket, CommandPacket, CommandPacketGpio, CommandPacketMotor
+from app.models.protocol import SensorPacket, AckPacket, AckPacketInitialize, CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketGetVersion
 from app.services.websocket_service import ws_manager
 
 logger = logging.getLogger(__name__)
+idx = 0
 
 class TCPBridgeService:
     def __init__(self):
@@ -19,6 +23,9 @@ class TCPBridgeService:
         self._rx_connected = False
         self._tx_connected = False
         
+        # Command index counter
+        self._command_idx = 0
+        
         # 현재 선택된 유닛보드 ID (0-31)
         self._selected_unit_id: int = 0
 
@@ -26,6 +33,23 @@ class TCPBridgeService:
         """Set the currently selected unit ID to filter/focus data if needed."""
         logger.info(f"Selected Unit ID changed to: {unit_id}")
         self._selected_unit_id = unit_id
+        # 임시로 idx 생성 (예: 현재 타임스탬프 또는 랜덤)
+        global idx
+        idx = idx + 1
+
+        try:
+            # Create a task for the async command
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                 asyncio.create_task(self.send_command(CommandPacketGetVersion(
+                    cmd='GET_VERSION',
+                    unit_id=unit_id+1,
+                    idx=str(idx),
+                    send=True,
+                )))
+            logger.info("Command sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send command: {e}")
 
     async def _broadcast_connection_status(self):
         """Broadcast current connection status to all WebSocket clients"""
@@ -150,6 +174,9 @@ class TCPBridgeService:
             elif cmd == "ACK":
                 packet = AckPacket(**data)
                 await self.handle_ack_packet(packet)
+            elif cmd == "ACK_INITIALIZE":
+                packet = AckPacketInitialize(**data)
+                await self.handle_ack_packet_initialize(packet)
             else:
                 logger.warning(f"Unknown CMD received: {cmd}")
 
@@ -166,7 +193,7 @@ class TCPBridgeService:
         try:
             update_msg = {
                 "type": "SENSOR_UPDATE",
-                "data": packet.dict(by_alias=True)
+                "data": packet.model_dump(by_alias=True)
             }
             await ws_manager.broadcast(update_msg)
             logger.debug(f"Broadcasted sensor update for Order={packet.order}")
@@ -178,13 +205,24 @@ class TCPBridgeService:
         try:
             ack_msg = {
                 "type": "ACK_RECEIVED",
-                "data": packet.dict(by_alias=True)
+                "data": packet.model_dump(by_alias=True)
             }
             await ws_manager.broadcast(ack_msg)
             logger.info(f"Broadcasted ACK: Idx={packet.idx}, Note={packet.note}")
         except Exception as e:
             logger.error(f"Failed to broadcast ACK: {e}")
 
+    async def handle_ack_packet_initialize(self, packet: AckPacketInitialize):
+        # Broadcast ACK_INITIALIZE to all clients
+        try:
+            ack_msg = {
+                "type": "ACK_INITIALIZE_RECEIVED",
+                "data": packet.model_dump(by_alias=True)
+            }
+            await ws_manager.broadcast(ack_msg)
+            logger.info(f"Broadcasted ACK_INITIALIZE: Idx={packet.idx}, FW_Version={packet.fw_version}, Note={packet.note}")    
+        except Exception as e:
+            logger.error(f"Failed to broadcast ACK_INITIALIZE: {e}")
     # -------------------------------------------------------------------------
     # Port 7001 Logic: Sending Commands
     # -------------------------------------------------------------------------
@@ -228,7 +266,54 @@ class TCPBridgeService:
             writer.close()
             await writer.wait_closed()
 
-    async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor]):
+    async def send_firmware_update(self, unit_id: int, file_path: str) -> bool:
+        """
+        Send firmware update command with file path.
+        """
+        # Load configuration from sys.ini
+        config = configparser.ConfigParser()
+        ini_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ini', 'sys.ini')
+        
+        try:
+            config.read(ini_path)
+            url = config.get('FIRMWARE_UPDATE', 'URL', fallback="http://172.30.1.100:8000/upload")
+            firmware_dir = config.get('FIRMWARE_UPDATE', 'DIR', fallback="C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/")
+        except Exception as e:
+            logger.error(f"Failed to load config from {ini_path}: {e}")
+            # Fallback values
+            url = "http://172.30.1.100:8000/upload"
+            firmware_dir = "C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/"
+
+        try:
+            # 파일이 존재하는지 확인하고 업로드 시도
+            # file_path가 로컬 서버(백엔드가 실행중인 PC)의 경로라면 직접 읽을 수 있음
+            full_path = os.path.join(firmware_dir, file_path)
+            with open(full_path, "rb") as f:
+                files = {"file": (file_path, f)}
+                response = requests.post(url, files=files)
+                response.raise_for_status() # Check for HTTP errors
+                logger.info(f"File uploaded successfully: {response.text}")
+        except FileNotFoundError:
+             logger.error(f"Firmware file not found at: {full_path}")
+             # 파일이 없더라도 명령은 보낼지, 아니면 중단할지 결정 필요.
+             # 여기서는 로그만 남기고 일단 진행 (또는 리턴 False)
+             return False
+        except Exception as e:
+            logger.error(f"Failed to upload firmware file: {e}")
+            return False
+
+        self._command_idx += 1
+        packet = CommandPacketFirmware(
+            cmd="FIRMWARE_UPDATE",
+            unit_id=unit_id + 1,
+            idx=self._command_idx,
+            file="/home/pi/Projects/cosmo-m/firmware/firmware.bin", # 라즈베리파이 펌웨어 전체 경로 포함
+            send=False
+        )
+        logger.info("Command sent successfully")
+        return await self.send_command(packet)
+
+    async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware]):
         """
         Public method to send JSON command to the connected Pi.
         """
@@ -251,3 +336,4 @@ class TCPBridgeService:
 
 # Global instance
 tcp_bridge = TCPBridgeService()
+

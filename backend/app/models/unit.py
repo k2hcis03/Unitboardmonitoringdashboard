@@ -47,3 +47,6 @@ class UnitStatus(BaseModel):
     valves: ValveStatus
     last_updated: datetime = Field(default_factory=datetime.now, description="마지막 업데이트 시간")
 
+class FirmwareUpdateRequest(BaseModel):
+    """펌웨어 업데이트 요청"""
+    file_path: str = Field(..., description="펌웨어 파일 경로")

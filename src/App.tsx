@@ -119,6 +119,21 @@ export default function App() {
     };
   }, []);
 
+  // 초기 로드 시 유닛 1(index 0)에 대한 펌웨어 버전 요청
+  useEffect(() => {
+    // 백엔드에 초기 유닛 선택 이벤트를 전송하여 펌웨어 버전 정보를 요청하도록 함
+    // FunctionButtonPanel에서도 WebSocket을 통해 UNIT_SELECT를 보내지만,
+    // 여기서 명시적으로 한 번 더 보내거나, 백엔드가 연결 시점에 기본값으로 처리하도록 유도
+    // WebSocket 연결이 수립된 후 보내야 하므로 약간의 지연을 주거나,
+    // WebSocketContext에서 연결 상태를 가져와서 처리하는 것이 좋음.
+    // 하지만 여기서는 간단하게 타임아웃으로 처리하거나, 
+    // FunctionButtonPanel 내부에서 처리하도록 하는 것이 나을 수 있음.
+    // 사용자의 요청: "프론트엔드가 처음 실행 될 때... set_selected_unit_id(self, unit_id: int):함수가 한번 호출되어서"
+    
+    // 이 부분은 FunctionButtonPanel 컴포넌트 내부에서 처리하는 것이 더 적절할 수 있음.
+    // App.tsx는 전체 레이아웃을 담당하므로.
+  }, []);
+
   const handleMotorToggle = async (isOn: boolean) => {
     setMotorOn(isOn);
     
