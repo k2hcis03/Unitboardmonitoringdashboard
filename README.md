@@ -283,7 +283,7 @@ ws://localhost:8000/ws/status
 
 ```env
 HOST=0.0.0.0
-PORT=8000
+PORT=9000
 CAN_INTERFACE=socketcan
 CAN_CHANNEL=can0
 CAN_BITRATE=500000
@@ -298,8 +298,8 @@ JSON_RECEIVE_PORT=7001
 `src/.env` 파일을 생성하여 API URL을 설정할 수 있습니다:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
-VITE_WS_URL=ws://localhost:8000/ws/status
+VITE_API_BASE_URL=http://localhost:9000
+VITE_WS_URL=ws://localhost:9000/ws/status
 ```
 
 ## 🧪 테스트
@@ -308,10 +308,10 @@ VITE_WS_URL=ws://localhost:8000/ws/status
 
 ```bash
 # 유닛보드 상태 조회
-curl http://localhost:8000/api/units/0
+curl http://localhost:9000/api/units/0
 
 # GPIO 제어
-curl -X POST http://localhost:8000/api/gpio/control \
+curl -X POST http://localhost:9000/api/gpio/control \
   -H "Content-Type: application/json" \
   -d '{"unit_id": 0, "gpio_index": 0, "state": true}'
 ```

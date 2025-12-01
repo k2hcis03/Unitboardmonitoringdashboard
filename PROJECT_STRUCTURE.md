@@ -150,7 +150,7 @@ State Manager
 ```env
 # 웹 서버
 HOST=0.0.0.0
-PORT=8000
+PORT=9000
 
 # CAN-FD
 CAN_INTERFACE=socketcan

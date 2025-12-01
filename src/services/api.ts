@@ -1,7 +1,7 @@
 /**
  * 백엔드 API 통신 서비스
  */
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000';
 
 export interface UnitStatus {
   unit_info: {

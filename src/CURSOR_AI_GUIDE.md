@@ -262,7 +262,7 @@ GPIO 토글/모터 제어 시 로딩 상태를 표시하도록 개선해줘:
 ```
 Windows PC Browser (프론트엔드)
     ↓ REST API / WebSocket
-Litestar Backend (포트 8000)
+Litestar Backend (포트 9000)
 ```
 
 ### 주요 특징
@@ -294,12 +294,12 @@ pip install -r requirements.txt
 # 서버 실행
 python main.py
 # 또는
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 9000
 ```
 
 서버가 다음 주소에서 실행됩니다:
-- 웹 API: http://localhost:8000
-- API 문서: http://localhost:8000/docs
+- 웹 API: http://localhost:9000
+- API 문서: http://localhost:9000/docs
 
 ### 프론트엔드 실행
 ```bash

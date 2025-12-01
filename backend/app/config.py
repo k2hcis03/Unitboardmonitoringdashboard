@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     
     # Server settings
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 9000
     reload: bool = True
     
     # Unit board settings
