@@ -15,6 +15,10 @@ export interface UnitStatus {
     temperature_2: number;
     temperature_3: number;
     temperature_4: number;
+    temperature_5: number;
+    temperature_6: number;
+    temperature_7: number;
+    temperature_8: number;
     ph: number;
     co2: number;
     flow_rate: number;

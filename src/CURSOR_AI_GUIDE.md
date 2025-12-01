@@ -56,7 +56,7 @@ GET /api/units/{unit_id}/gpio
   "unit_info": {
     "unit_id": 0,
     "name": "Unit 0",
-    "firmware_version": "v2.4.1",
+    "firmware_version": "v0.0.0",
     "is_connected": true
   },
   "sensors": {

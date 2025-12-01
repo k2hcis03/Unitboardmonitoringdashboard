@@ -19,7 +19,7 @@ export function FunctionButtonPanel({
   
   const { lastMessage, sendMessage } = useWebSocket();
   const [isPiConnected, setIsPiConnected] = useState(false);
-  const [firmwareVersion, setFirmwareVersion] = useState<string>('v2.4.1');
+  const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
 
   useEffect(() => {
     if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {

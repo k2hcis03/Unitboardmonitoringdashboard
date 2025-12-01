@@ -24,7 +24,7 @@ class StateManager:
             unit_info = UnitInfo(
                 unit_id=unit_id,
                 name=f"Unit {unit_id}",
-                firmware_version="v2.4.1",
+                firmware_version="v0.0.0",
                 is_connected=False
             )
             
