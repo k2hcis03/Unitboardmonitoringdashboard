@@ -295,11 +295,50 @@ JSON_RECEIVE_PORT=7001
 
 ### Frontend 설정
 
-`src/.env` 파일을 생성하여 API URL을 설정할 수 있습니다:
+`src/.env` 파일을 생성하여 API URL을 설정할 수 있습니다.
 
+**Windows (로컬 개발) 예시:**
 ```env
 VITE_API_BASE_URL=http://localhost:9000
 VITE_WS_URL=ws://localhost:9000/ws/status
+```
+
+**Linux (라즈베리파이) 예시:**
+```env
+# 라즈베리파이의 IP 주소를 사용해야 합니다
+VITE_API_BASE_URL=http://172.30.1.100:9000
+VITE_WS_URL=ws://172.30.1.100:9000/ws/status
+```
+
+### 리눅스(라즈베리파이) 실행 가이드
+
+라즈베리파이에서 실행 시 외부 접속을 허용하려면 다음과 같이 실행하세요:
+
+```bash
+# 외부 접속 허용 및 브라우저 자동 실행 방지
+npm run dev -- --host --open=false
+```
+
+또는 `vite.config.ts` 파일에 설정을 추가할 수 있습니다.
+
+**참고: 파일 감시자 한도 오류 (ENOSPC) 해결**
+라즈베리파이에서 `Error: ENOSPC: System limit for number of file watchers reached` 오류가 발생하면 다음 명령어로 시스템 한계치를 늘려주세요:
+
+```bash
+echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p
+```
+
+### 백엔드 호스트 설정 (Windows/Linux 공용)
+
+백엔드의 펌웨어 업데이트 URL이나 IP 설정은 `backend/app/ini/sys.ini` 파일에서 관리합니다:
+
+```ini
+[FIRMWARE_UPDATE]
+URL = http://172.30.1.100:8000/upload
+DIR = C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/
+
+[NETWORK]
+HOST_IP = 172.30.1.100
 ```
 
 ## 🧪 테스트

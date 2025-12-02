@@ -276,13 +276,24 @@ class TCPBridgeService:
         
         try:
             config.read(ini_path)
-            url = config.get('FIRMWARE_UPDATE', 'URL', fallback="http://172.30.1.100:8000/upload")
-            firmware_dir = config.get('FIRMWARE_UPDATE', 'DIR', fallback="C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/")
+            url = config.get('FIRMWARE_UPDATE', 'URL', fallback="http://172.30.1.100:9001/upload")
+            
+            # OS에 따른 펌웨어 디렉토리 자동 설정
+            if os.name == 'nt':  # Windows
+                default_dir = "C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/"
+                firmware_dir = config.get('FIRMWARE_UPDATE', 'DIR_WINDOWS', fallback=default_dir)
+            else:  # Linux (Raspberry Pi)
+                default_dir = "/home/pi/Projects/cosmo-m/firmware/"
+                firmware_dir = config.get('FIRMWARE_UPDATE', 'DIR_LINUX', fallback=default_dir)
+                
         except Exception as e:
             logger.error(f"Failed to load config from {ini_path}: {e}")
             # Fallback values
-            url = "http://172.30.1.100:8000/upload"
-            firmware_dir = "C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/"
+            url = "http://172.30.1.100:9001/upload"
+            if os.name == 'nt':
+                firmware_dir = "C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/"
+            else:
+                firmware_dir = "/home/pi/Projects/cosmo-m/firmware/"
 
         try:
             # 파일이 존재하는지 확인하고 업로드 시도

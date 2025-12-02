@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react';
-
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:9000/ws/status';
+import { WS_URL } from '../config';
 
 export interface WebSocketMessage {
   type: string;

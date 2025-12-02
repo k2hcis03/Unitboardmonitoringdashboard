@@ -55,6 +55,10 @@
     },
     server: {
       port: 3000,
-      open: true,
+      open: false,
+      watch: {
+        // backend 폴더와 venv 폴더는 감시하지 않음
+        ignored: ['**/backend/**', '**/venv/**', '**/node_modules/**']
+      }
     },
   });
