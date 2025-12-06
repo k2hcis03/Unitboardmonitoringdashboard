@@ -1,4 +1,4 @@
-import { Cpu, BookOpen, Play, Square, Download } from 'lucide-react';
+import { Cpu, BookOpen, Play, Square, Download, LayoutDashboard, Settings2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -7,11 +7,15 @@ import { apiClient } from '../services/api';
 interface FunctionButtonPanelProps {
   selectedUnitId: number;
   onUnitIdChange: (unitId: number) => void;
+  viewMode?: 'control' | 'dashboard';
+  onViewModeChange?: (mode: 'control' | 'dashboard') => void;
 }
 
 export function FunctionButtonPanel({ 
   selectedUnitId, 
-  onUnitIdChange 
+  onUnitIdChange,
+  viewMode = 'control',
+  onViewModeChange
 }: FunctionButtonPanelProps) {
   const [showUnitSelector, setShowUnitSelector] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null);
@@ -20,6 +24,20 @@ export function FunctionButtonPanel({
   const { lastMessage, sendMessage } = useWebSocket();
   const [isPiConnected, setIsPiConnected] = useState(false);
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
+  const [isRecording, setIsRecording] = useState(false);
+
+  useEffect(() => {
+    // Check initial recording status
+    const checkRecordingStatus = async () => {
+      try {
+        const status = await apiClient.getRecordingStatus();
+        setIsRecording(status.is_recording);
+      } catch (error) {
+        console.error('Failed to get recording status:', error);
+      }
+    };
+    checkRecordingStatus();
+  }, []);
 
   useEffect(() => {
     if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {
@@ -108,39 +126,72 @@ export function FunctionButtonPanel({
     }
   };
 
+  const handleStartRecording = async () => {
+    try {
+      console.log('Starting recording...');
+      const response = await apiClient.startRecording();
+      if (response.is_recording) {
+        setIsRecording(true);
+        console.log('Recording started');
+      }
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      alert('녹화 시작에 실패했습니다.');
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      console.log('Stopping recording...');
+      const response = await apiClient.stopRecording();
+      if (!response.is_recording) {
+        setIsRecording(false);
+        console.log('Recording stopped');
+      }
+    } catch (error) {
+      console.error('Failed to stop recording:', error);
+      alert('녹화 중지에 실패했습니다.');
+    }
+  };
+
   const buttons = [
     { 
       icon: Cpu, 
       label: '유닛보드 선택', 
       color: 'from-[#0A4D68] to-[#0A84FF]',
       onClick: () => setShowUnitSelector(!showUnitSelector),
-      info: selectedUnitId !== null ? `유닛 ${selectedUnitId + 1}` : null
+      info: selectedUnitId !== null ? `유닛 ${selectedUnitId + 1}` : null,
+      disabled: false
     },
     { 
       icon: BookOpen, 
       label: '레시피 선택', 
       color: 'from-[#0A4D68] to-[#0A84FF]',
       onClick: () => document.getElementById('recipe-file-input')?.click(),
-      info: selectedRecipe
+      info: selectedRecipe,
+      disabled: false
     },
     { 
-      icon: Play, 
-      label: '레시피 시작', 
-      color: 'from-emerald-600 to-emerald-500',
-      onClick: () => console.log('레시피 시작')
+      icon: isRecording ? Square : Play, 
+      label: isRecording ? '레시피 정지' : '레시피 시작', 
+      color: isRecording ? 'from-rose-600 to-rose-500' : 'from-emerald-600 to-emerald-500',
+      onClick: isRecording ? handleStopRecording : handleStartRecording,
+      disabled: false
     },
     { 
-      icon: Square, 
-      label: '레시피 종료', 
-      color: 'from-rose-600 to-rose-500',
-      onClick: () => console.log('레시피 종료')
+      icon: viewMode === 'control' ? LayoutDashboard : Settings2, 
+      label: viewMode === 'control' ? '대시보드' : '수동 제어', 
+      color: 'from-[#0A4D68] to-[#0A84FF]',
+      onClick: () => onViewModeChange && onViewModeChange(viewMode === 'control' ? 'dashboard' : 'control'),
+      disabled: false
     },
     { 
       icon: Download, 
       label: '펌웨어 업데이트', 
       color: 'from-[#0A4D68] to-[#0A84FF]',
       onClick: () => document.getElementById('firmware-file-input')?.click(),
-      info: selectedFirmware
+      info: selectedFirmware,
+      disabled: false
     },
   ];
 
@@ -153,12 +204,12 @@ export function FunctionButtonPanel({
             <div key={index}>
               <button
                 onClick={button.onClick}
+                disabled={button.disabled}
                 className={`
                   w-full flex items-center gap-4 px-6 py-4 rounded-xl
                   bg-gradient-to-r ${button.color}
                   text-white
-                  hover:shadow-lg hover:scale-[1.02]
-                  active:scale-[0.98]
+                  ${button.disabled ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]'}
                   transition-all duration-300
                   group
                 `}

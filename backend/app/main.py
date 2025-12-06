@@ -6,6 +6,7 @@ from litestar.logging import LoggingConfig
 from app.config import settings
 from app.controllers.unit import UnitController
 from app.controllers.gpio import GPIOController
+from app.controllers.history import HistoryController
 from app.controllers.websocket import websocket_handler
 from app.services.tcp_bridge import tcp_bridge
 from app.utils.logger import setup_logging
@@ -21,6 +22,7 @@ api_router = Router(
     route_handlers=[
         UnitController,
         GPIOController,
+        HistoryController,
     ]
 )
 

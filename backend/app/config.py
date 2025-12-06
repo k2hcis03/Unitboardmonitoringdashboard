@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # Unit board settings
     max_units: int = 32  # 최대 유닛보드 수
     
+    # Database settings
+    db_path: str = "sensor_data.db"
+    retention_days: int = 30
+    max_db_size_mb: int = 500  # Default 500MB
+    
     # CORS settings
     cors_origins: List[str] = [
         "http://localhost:3000",

@@ -162,6 +162,33 @@ class APIClient {
       body: JSON.stringify(request),
     });
   }
+
+  /**
+   * DB 기록 시작
+   */
+  async startRecording(): Promise<{ status: string, is_recording: boolean }> {
+    return this.request<{ status: string, is_recording: boolean }>('/api/recording/start', {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * DB 기록 중지
+   */
+  async stopRecording(): Promise<{ status: string, is_recording: boolean }> {
+    return this.request<{ status: string, is_recording: boolean }>('/api/recording/stop', {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * DB 기록 상태 조회
+   */
+  async getRecordingStatus(): Promise<{ is_recording: boolean }> {
+    return this.request<{ is_recording: boolean }>('/api/recording/status', {
+      method: 'GET',
+    });
+  }
 }
 
 export const apiClient = new APIClient();

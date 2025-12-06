@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.models.protocol import SensorPacket, AckPacket, AckPacketInitialize, CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketGetVersion
 from app.services.websocket_service import ws_manager
+from app.services.db_service import db_service
 
 logger = logging.getLogger(__name__)
 idx = 0
@@ -23,11 +24,17 @@ class TCPBridgeService:
         self._rx_connected = False
         self._tx_connected = False
         
+        # Recording status
+        self.is_recording = False
+        
         # Command index counter
         self._command_idx = 0
         
         # 현재 선택된 유닛보드 ID (0-31)
         self._selected_unit_id: int = 0
+        
+        # Tasks
+        self._cleanup_task: Optional[asyncio.Task] = None
 
     def set_selected_unit_id(self, unit_id: int):
         """Set the currently selected unit ID to filter/focus data if needed."""
@@ -71,9 +78,34 @@ class TCPBridgeService:
             }
         }
 
+    async def _periodic_cleanup_task(self):
+        """Run DB cleanup periodically (every 1 hour)."""
+        logger.info("Starting periodic DB cleanup task")
+        while True:
+            try:
+                # Initial delay to avoid startup contention or wait for 1 hour
+                await asyncio.sleep(3600) 
+                logger.info("Running periodic cleanup...")
+                await db_service.cleanup_old_data()
+            except asyncio.CancelledError:
+                logger.info("Periodic cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in periodic cleanup: {e}")
+                # Wait a bit before retrying to avoid tight loop on error
+                await asyncio.sleep(60)
+
     async def start(self):
         """Start both TCP servers (Receiver on 7000, Sender Connection Handler on 7001)"""
         logger.info("Starting TCP Bridge Service...")
+        
+        # Initialize Database
+        await db_service.init_db()
+        # Cleanup old data on startup
+        await db_service.cleanup_old_data()
+        
+        # Start periodic cleanup task
+        self._cleanup_task = asyncio.create_task(self._periodic_cleanup_task())
         
         # 1. Receiver Server (Port 7000) - Listens for incoming data
         self._receiver_server = await asyncio.start_server(
@@ -90,9 +122,32 @@ class TCPBridgeService:
         # We do NOT await serve_forever() here because it would block Litestar startup.
         # The servers are attached to the loop now.
 
+    def start_recording(self):
+        """Start recording sensor data to DB."""
+        logger.info("Starting DB recording...")
+        self.is_recording = True
+
+    def stop_recording(self):
+        """Stop recording sensor data to DB."""
+        logger.info("Stopping DB recording...")
+        self.is_recording = False
+
+    def get_recording_status(self) -> bool:
+        """Get current recording status."""
+        return self.is_recording
+
     async def stop(self):
         """Stop TCP servers"""
         logger.info("Stopping TCP Bridge Service...")
+        
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
+
         if self._receiver_server:
             self._receiver_server.close()
             await self._receiver_server.wait_closed()
@@ -197,8 +252,31 @@ class TCPBridgeService:
             }
             await ws_manager.broadcast(update_msg)
             logger.debug(f"Broadcasted sensor update for Order={packet.order}")
+            
+            # Save to DB if recording
+            if self.is_recording:
+                # Construct timestamp YYYY-MM-DD HH:MM:SS
+                created_at = f"{packet.date} {packet.time}"
+                
+                # Convert models to dicts for DB service
+                readings = [r.model_dump(by_alias=True) for r in packet.values]
+                states = [s.model_dump(by_alias=True) for s in packet.state]
+                
+                # Async save (fire and forget or await? await is safer for order but slower)
+                # Requirement: "모든 저장은 비동기(Async)로 수행하여 메인 통신 루프를 차단하지 않아야 함."
+                # aiosqlite is async, so awaiting it yields control. 
+                # But to be super non-blocking to the *next* packet processing, we can use create_task.
+                # However, create_task might flood if DB is slow. Await is usually fine with async DB.
+                # Let's use create_task to strictly follow "Main loop blocking minimization".
+                asyncio.create_task(db_service.save_packet(
+                    order_num=packet.order,
+                    created_at=created_at,
+                    readings=readings,
+                    states=states
+                ))
+                
         except Exception as e:
-            logger.error(f"Failed to broadcast sensor update: {e}")
+            logger.error(f"Failed to process sensor packet: {e}")
 
     async def handle_ack_packet(self, packet: AckPacket):
         # Broadcast ACK to all clients

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { StatusMonitoringCard } from './components/StatusMonitoringCard';
 import { GPIOControlPanel } from './components/GPIOControlPanel';
 import { FunctionButtonPanel } from './components/FunctionButtonPanel';
+import { DashboardPanel } from './components/DashboardPanel';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { apiClient } from './services/api';
 
@@ -9,6 +10,14 @@ export default function App() {
   // 유닛보드 ID (기본값: 0)
   const [selectedUnitId, setSelectedUnitId] = useState<number>(0);
   
+  // View Mode: 'control' or 'dashboard'
+  const [viewMode, setViewMode] = useState<'control' | 'dashboard'>('control');
+
+  // Dashboard State (Lifted Up)
+  const [dashboardTempSelection, setDashboardTempSelection] = useState<boolean[]>(
+    Array(8).fill(true)
+  );
+
   // GPIO 제어 패널용 독립적인 상태
   const [gpioStates, setGpioStates] = useState<boolean[]>(
     Array(8).fill(false)
@@ -222,28 +231,40 @@ export default function App() {
 
         {/* Main Dashboard Grid */}
         <div className="grid grid-cols-[1fr_320px] gap-6">
-          {/* Left Column - Monitoring & Control */}
+          {/* Left Column - Monitoring & Control OR Dashboard */}
           <div className="flex flex-col gap-6">
-            {/* Status Monitoring Card - 독립적인 상태 표시 */}
-            <StatusMonitoringCard selectedUnitId={selectedUnitId} />
+            {viewMode === 'control' ? (
+              <>
+                {/* Status Monitoring Card - 독립적인 상태 표시 */}
+                <StatusMonitoringCard selectedUnitId={selectedUnitId} />
 
-            {/* GPIO & Motor Control Panel - 독립적인 제어 */}
-            <GPIOControlPanel
-              gpioStates={gpioStates}
-              toggleGPIO={toggleGPIO}
-              motorOn={motorOn}
-              setMotorOn={handleMotorToggle}
-              motorSpeed={motorSpeed}
-              setMotorSpeed={handleMotorSpeedChange}
-              motorTime={motorTime}
-              setMotorTime={handleMotorTimeChange}
-            />
+                {/* GPIO & Motor Control Panel - 독립적인 제어 */}
+                <GPIOControlPanel
+                  gpioStates={gpioStates}
+                  toggleGPIO={toggleGPIO}
+                  motorOn={motorOn}
+                  setMotorOn={handleMotorToggle}
+                  motorSpeed={motorSpeed}
+                  setMotorSpeed={handleMotorSpeedChange}
+                  motorTime={motorTime}
+                  setMotorTime={handleMotorTimeChange}
+                />
+              </>
+            ) : (
+              <DashboardPanel 
+                selectedUnitId={selectedUnitId} 
+                tempSelection={dashboardTempSelection}
+                onTempSelectionChange={setDashboardTempSelection}
+              />
+            )}
           </div>
 
           {/* Right Column - Function Buttons */}
           <FunctionButtonPanel 
             selectedUnitId={selectedUnitId}
             onUnitIdChange={setSelectedUnitId}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
