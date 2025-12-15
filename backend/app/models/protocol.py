@@ -116,3 +116,41 @@ class CommandPacketGetVersion(BaseModel):
     send: bool = Field(False, alias="SEND")
     class Config:
         populate_by_name = True
+
+class RecipeDataItem(BaseModel):
+    index: int = Field(..., alias="INDEX")
+    temp: float = Field(..., alias="TEMP")
+    temp_mgn: float = Field(..., alias="TEMP_MGN")
+    m_time: int = Field(..., alias="M_TIME")
+    m_rpm: int = Field(..., alias="M_RPM")
+    
+    class Config:
+        populate_by_name = True
+
+class CommandPacketRef(BaseModel):
+    cmd: str = Field("REF", alias="CMD")
+    idx: Union[str, int] = Field(..., alias="IDX")
+    tank_id: Union[str, int] = Field(..., alias="TANK_ID")
+    stage: Union[str, int] = Field(..., alias="STAGE")
+    step: Union[str, int] = Field(..., alias="STEP")
+    data: List[RecipeDataItem] = Field(..., alias="DATA")
+    send: bool = Field(False, alias="SEND")
+    
+    class Config:
+        populate_by_name = True
+
+class StateDataItem(BaseModel):
+    tank_id: Union[str, int] = Field(..., alias="TANK_ID")
+    stage: int = Field(..., alias="STAGE")
+    status: str = Field(..., alias="STATUS")
+    
+    class Config:
+        populate_by_name = True
+
+class CommandPacketState(BaseModel):
+    cmd: str = Field("STATE", alias="CMD")
+    idx: Union[str, int] = Field(..., alias="IDX")
+    data: List[StateDataItem] = Field(..., alias="DATA")
+    
+    class Config:
+        populate_by_name = True

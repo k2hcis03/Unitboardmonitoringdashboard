@@ -7,7 +7,7 @@ import os
 from typing import Optional, Dict, List, Union
 from pydantic import ValidationError
 
-from app.models.protocol import SensorPacket, AckPacket, AckPacketInitialize, CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketGetVersion
+from app.models.protocol import SensorPacket, AckPacket, AckPacketInitialize, CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketGetVersion, CommandPacketRef, RecipeDataItem, CommandPacketState, StateDataItem
 from app.services.websocket_service import ws_manager
 from app.services.db_service import db_service
 
@@ -402,7 +402,78 @@ class TCPBridgeService:
         logger.info("Command sent successfully")
         return await self.send_command(packet)
 
-    async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware]):
+    async def send_recipe(self, recipe_data: dict) -> bool:
+        """
+        Send recipe (REF) command to the connected Pi.
+        recipe_data should be the JSON content from reference file.
+        """
+        try:
+            # 레시피 전송 성공 후 Initial 상태 전송
+            await self.send_state_command("Initial")
+            logger.info("Sent Initial state")
+
+            # Parse DATA array into RecipeDataItem objects
+            data_items = []
+            for item_dict in recipe_data.get("DATA", []):
+                data_items.append(RecipeDataItem(**item_dict))
+            
+            # Create CommandPacketRef from recipe data
+            packet = CommandPacketRef(
+                cmd="REF",
+                idx=recipe_data.get("IDX", str(self._command_idx)),
+                # tank_id= recipe_data.get("TANK_ID", "100"),
+                # 선택된 유닛보드 ID를 기반으로 TANK_ID 설정
+                tank_id= str(self._selected_unit_id + 101),
+                stage=recipe_data.get("STAGE", "0"),
+                step=recipe_data.get("STEP", "3600"),
+                data=data_items,
+                send=False
+            )
+            self._command_idx += 1
+            result = await self.send_command(packet)
+
+            return result
+        except Exception as e:
+            logger.error(f"Failed to create recipe packet: {e}")
+            return False
+
+    async def send_state_command(self, status: str, stage: int = 100) -> bool:
+        """
+        Send STATE command to the connected Pi.
+        status: "Run", "Pause", "Stop", "Initial", or "None"
+        Creates 32 state items (TANK_ID 100-131), only selected unit has the actual status.
+        """
+        try:
+            self._command_idx += 1
+            selected_tank_id = self._selected_unit_id + 101  # 0 -> 101, 1 -> 102, ...
+            
+            # 32개의 StateDataItem 생성 (TANK_ID 100~131)
+            state_data_list = []
+            for i in range(32):
+                tank_id = 100 + i
+                # 선택된 유닛만 실제 STATUS 설정, 나머지는 "None"
+                item_status = status if tank_id == selected_tank_id else "None"
+                
+                state_data = StateDataItem(
+                    TANK_ID=str(tank_id),
+                    STAGE=stage,
+                    STATUS=item_status
+                )
+                state_data_list.append(state_data)
+            
+            packet = CommandPacketState(
+                cmd="STATE",
+                idx=self._command_idx,
+                data=state_data_list
+            )
+            
+            logger.info(f"Sending STATE command: Selected TANK_ID={selected_tank_id}, STATUS={status}")
+            return await self.send_command(packet)
+        except Exception as e:
+            logger.error(f"Failed to send state command: {e}")
+            return False
+
+    async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketRef]):
         """
         Public method to send JSON command to the connected Pi.
         """

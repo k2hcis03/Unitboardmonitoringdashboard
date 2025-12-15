@@ -1,0 +1,28 @@
+{
+    "CMD":"REF",
+    "IDX":"1234",
+    "TANK_ID":"101",
+    "STAGE":"201",
+    "STEP":"3600",
+    "DATA":[
+        {"INDEX":0,"TEMP":15.1,"TEMP_MGN":5.0,"M_TIME":300,"M_RPM":60}, 
+        {"INDEX":1,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":2,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":3,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":4,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":5,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":6,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":7,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":8,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":60,"M_RPM":240},
+        {"INDEX":9,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":10,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":11,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":12,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":13,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":14,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":15,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":16,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":60,"M_RPM":240},
+        {"INDEX":17,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0},
+        {"INDEX":18,"TEMP":15.3,"TEMP_MGN":5.0,"M_TIME":0,"M_RPM":0}
+    ]
+}

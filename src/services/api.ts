@@ -164,7 +164,7 @@ class APIClient {
   }
 
   /**
-   * DB 기록 시작
+   * DB 기록 시작 (STATE "Run" 전송)
    */
   async startRecording(): Promise<{ status: string, is_recording: boolean }> {
     return this.request<{ status: string, is_recording: boolean }>('/api/recording/start', {
@@ -173,7 +173,16 @@ class APIClient {
   }
 
   /**
-   * DB 기록 중지
+   * DB 기록 일시정지 (STATE "Pause" 전송)
+   */
+  async pauseRecording(): Promise<{ status: string, is_recording: boolean }> {
+    return this.request<{ status: string, is_recording: boolean }>('/api/recording/pause', {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * DB 기록 종료 (STATE "Stop" 전송)
    */
   async stopRecording(): Promise<{ status: string, is_recording: boolean }> {
     return this.request<{ status: string, is_recording: boolean }>('/api/recording/stop', {
@@ -187,6 +196,43 @@ class APIClient {
   async getRecordingStatus(): Promise<{ is_recording: boolean }> {
     return this.request<{ is_recording: boolean }>('/api/recording/status', {
       method: 'GET',
+    });
+  }
+
+  /**
+   * 레시피 파일 목록 조회
+   */
+  async getRecipeList(): Promise<Array<{ filename: string; path: string }>> {
+    return this.request<Array<{ filename: string; path: string }>>('/api/recipe/list', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * 레시피 파일 내용 조회
+   */
+  async getRecipeContent(filename: string): Promise<any> {
+    return this.request<any>(`/api/recipe/${filename}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * 레시피 전송
+   */
+  async sendRecipe(recipeData: any): Promise<{ success: boolean; error?: string }> {
+    return this.request<{ success: boolean; error?: string }>('/api/recipe/send', {
+      method: 'POST',
+      body: JSON.stringify(recipeData),
+    });
+  }
+
+  /**
+   * 레시피 파일 전송
+   */
+  async sendRecipeFile(filename: string): Promise<{ success: boolean; error?: string }> {
+    return this.request<{ success: boolean; error?: string }>(`/api/recipe/send/${filename}`, {
+      method: 'POST',
     });
   }
 }

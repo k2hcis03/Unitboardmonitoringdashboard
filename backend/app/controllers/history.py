@@ -22,16 +22,28 @@ class HistoryController(Controller):
     # Recording Control
     @post(path="/recording/start")
     async def start_recording(self, data: Optional[RecordingStartRequest] = None) -> dict:
-        """Start DB recording."""
+        """Start DB recording and send STATE Run command."""
         recipe_id = data.recipe_id if data else None
         logger.info(f"Starting recording. Recipe ID: {recipe_id}")
         tcp_bridge.start_recording()
+        # Send STATE "Run" command
+        await tcp_bridge.send_state_command("Run")
         return {"status": "started", "is_recording": True, "recipe_id": recipe_id}
+
+    @post(path="/recording/pause")
+    async def pause_recording(self) -> dict:
+        """Pause DB recording and send STATE Pause command."""
+        tcp_bridge.stop_recording()
+        # Send STATE "Pause" command
+        await tcp_bridge.send_state_command("Pause")
+        return {"status": "paused", "is_recording": False}
 
     @post(path="/recording/stop")
     async def stop_recording(self) -> dict:
-        """Stop DB recording."""
+        """Stop DB recording and send STATE Stop command."""
         tcp_bridge.stop_recording()
+        # Send STATE "Stop" command
+        await tcp_bridge.send_state_command("Stop")
         return {"status": "stopped", "is_recording": False}
 
     @get(path="/recording/status")

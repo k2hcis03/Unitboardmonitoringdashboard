@@ -1,0 +1,45 @@
+{
+    "CMD": "STATE",
+    "IDX": 1234,
+    "DATA": [     
+        {"TANK_ID": 100, "STAGE": 100, "STATUS": "None"},
+        {"TANK_ID": 101, "STAGE": 100, "STATUS": "Pause"},
+        {"TANK_ID": 102, "STAGE": 100, "STATUS": "Run"},
+        {"TANK_ID": 103, "STAGE": 100, "STATUS": "None"},
+        {"TANK_ID": 200, "STAGE": 100, "STATUS": "None"},
+        {"TANK_ID": 201, "STAGE": 100, "STATUS": "None"}
+    ]
+}
+{
+    "CMD": "STATE",
+    "IDX": 1234,
+    "DATA": [     
+        {"TANK_ID": 101, "STAGE": 100, "STATUS": "Initial"}
+    ]
+}
+
+{
+    "CMD": "STATE",
+    "IDX": 1234,
+    "DATA": [
+        {"TANK_ID": 100, "STAGE": 0, "STATUS": "None"},
+        {"TANK_ID": 101, "STAGE": 100, "STATUS": "Pause"},
+        {"TANK_ID": 102, "STAGE": 100, "STATUS": "Run"},
+        {"TANK_ID": 103, "STAGE": 0, "STATUS": "None"},
+        {"TANK_ID": 200, "STAGE": 0, "STATUS": "None"},
+        {"TANK_ID": 201, "STAGE": 0, "STATUS": "None"}
+    ]
+}
+
+{
+    "CMD": "STATE",
+    "IDX": 1234,
+    "DATA": [
+        {"TANK_ID": 100, "STAGE": 0, "STATUS": "None"},
+        {"TANK_ID": 101, "STAGE": 100, "STATUS": "Pause"},
+        {"TANK_ID": 102, "STAGE": 100, "STATUS": "Run"},
+        {"TANK_ID": 103, "STAGE": 0, "STATUS": "None"},
+        {"TANK_ID": 200, "STAGE": 0, "STATUS": "None"},
+        {"TANK_ID": 201, "STAGE": 0, "STATUS": "None"}
+    ]
+}

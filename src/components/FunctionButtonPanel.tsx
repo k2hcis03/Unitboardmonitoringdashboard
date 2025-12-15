@@ -1,4 +1,4 @@
-import { Cpu, BookOpen, Play, Square, Download, LayoutDashboard, Settings2 } from 'lucide-react';
+import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -26,18 +26,8 @@ export function FunctionButtonPanel({
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
   const [isRecording, setIsRecording] = useState(false);
 
-  useEffect(() => {
-    // Check initial recording status
-    const checkRecordingStatus = async () => {
-      try {
-        const status = await apiClient.getRecordingStatus();
-        setIsRecording(status.is_recording);
-      } catch (error) {
-        console.error('Failed to get recording status:', error);
-      }
-    };
-    checkRecordingStatus();
-  }, []);
+  // 프로그램 시작 시 항상 '레시피 시작' 상태로 시작
+  // 서버 상태와 관계없이 isRecording은 false로 유지
 
   useEffect(() => {
     if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {
@@ -82,10 +72,53 @@ export function FunctionButtonPanel({
     setShowUnitSelector(false);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRecipeFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setSelectedRecipe(file.name);
+    if (!file) return;
+
+    try {
+      // 파일 읽기
+      const fileContent = await file.text();
+      
+      // JSON 파싱
+      let recipeData;
+      try {
+        recipeData = JSON.parse(fileContent);
+      } catch (parseError) {
+        alert('유효하지 않은 JSON 파일입니다.');
+        setSelectedRecipe(null);
+        event.target.value = '';
+        return;
+      }
+
+      // 레시피 데이터 검증 (CMD가 REF인지 확인)
+      if (recipeData.CMD !== 'REF') {
+        alert('유효하지 않은 레시피 파일입니다. CMD가 "REF"여야 합니다.');
+        setSelectedRecipe(null);
+        event.target.value = '';
+        return;
+      }
+
+      // 레시피 데이터를 라즈베리파이로 전송
+      const result = await apiClient.sendRecipe(recipeData);
+      
+      if (result.success) {
+        // 전송 성공 시에만 파일명 저장
+        setSelectedRecipe(file.name);
+        console.log(`Recipe ${file.name} sent successfully`);
+        alert(`레시피 "${file.name}" 전송 완료`);
+      } else {
+        console.error('Failed to send recipe:', result.error);
+        alert(`레시피 전송 실패: ${result.error || '알 수 없는 오류'}`);
+        setSelectedRecipe(null);
+      }
+    } catch (error) {
+      console.error('Failed to process recipe file:', error);
+      alert('레시피 파일 처리 중 오류가 발생했습니다.');
+      setSelectedRecipe(null);
+    } finally {
+      // 입력 초기화 (동일 파일 재선택 가능하게)
+      event.target.value = '';
     }
   };
 
@@ -127,6 +160,12 @@ export function FunctionButtonPanel({
   };
 
   const handleStartRecording = async () => {
+    // 레시피가 선택되지 않은 경우 메시지 표시
+    if (selectedRecipe === null) {
+      alert('레시피를 선택하세요');
+      return;
+    }
+
     try {
       console.log('Starting recording...');
       const response = await apiClient.startRecording();
@@ -140,6 +179,20 @@ export function FunctionButtonPanel({
     }
   };
 
+  const handlePauseRecording = async () => {
+    try {
+      console.log('Pausing recording...');
+      const response = await apiClient.pauseRecording();
+      if (!response.is_recording) {
+        setIsRecording(false);
+        console.log('Recording paused');
+      }
+    } catch (error) {
+      console.error('Failed to pause recording:', error);
+      alert('일시정지에 실패했습니다.');
+    }
+  };
+
   const handleStopRecording = async () => {
     try {
       console.log('Stopping recording...');
@@ -150,7 +203,7 @@ export function FunctionButtonPanel({
       }
     } catch (error) {
       console.error('Failed to stop recording:', error);
-      alert('녹화 중지에 실패했습니다.');
+      alert('레시피 종료에 실패했습니다.');
     }
   };
 
@@ -172,11 +225,20 @@ export function FunctionButtonPanel({
       disabled: false
     },
     { 
-      icon: isRecording ? Square : Play, 
-      label: isRecording ? '레시피 정지' : '레시피 시작', 
-      color: isRecording ? 'from-rose-600 to-rose-500' : 'from-emerald-600 to-emerald-500',
-      onClick: isRecording ? handleStopRecording : handleStartRecording,
-      disabled: false
+      icon: isRecording ? Pause : Play, 
+      label: isRecording ? '레시피 일시정지' : '레시피 시작', 
+      color: 'from-emerald-600 to-emerald-500',
+      onClick: isRecording ? handlePauseRecording : handleStartRecording,
+      disabled: false,
+      visuallyDisabled: !isRecording && selectedRecipe === null
+    },
+    { 
+      icon: Square, 
+      label: '레시피 종료', 
+      color: 'from-rose-600 to-rose-500',
+      onClick: handleStopRecording,
+      disabled: false,
+      visuallyDisabled: false
     },
     { 
       icon: viewMode === 'control' ? LayoutDashboard : Settings2, 
@@ -200,6 +262,7 @@ export function FunctionButtonPanel({
       <div className="space-y-3">
         {buttons.map((button, index) => {
           const Icon = button.icon;
+          const isVisuallyDisabled = button.visuallyDisabled || button.disabled;
           return (
             <div key={index}>
               <button
@@ -209,7 +272,7 @@ export function FunctionButtonPanel({
                   w-full flex items-center gap-4 px-6 py-4 rounded-xl
                   bg-gradient-to-r ${button.color}
                   text-white
-                  ${button.disabled ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]'}
+                  ${isVisuallyDisabled ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]'}
                   transition-all duration-300
                   group
                 `}
@@ -249,6 +312,7 @@ export function FunctionButtonPanel({
                   </div>
                 </div>
               )}
+
             </div>
           );
         })}
@@ -258,8 +322,8 @@ export function FunctionButtonPanel({
       <input
         id="recipe-file-input"
         type="file"
-        accept=".json,.csv,.txt,.recipe"
-        onChange={handleFileSelect}
+        accept=".json"
+        onChange={handleRecipeFileSelect}
         className="hidden"
       />
       <input
