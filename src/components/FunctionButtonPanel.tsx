@@ -1,8 +1,16 @@
-import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2 } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 import { apiClient } from '../services/api';
+
+// 초를 시:분:초 형식으로 변환하는 헬퍼 함수
+const formatTime = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
 interface FunctionButtonPanelProps {
   selectedUnitId: number;
@@ -25,9 +33,42 @@ export function FunctionButtonPanel({
   const [isPiConnected, setIsPiConnected] = useState(false);
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
   const [isRecording, setIsRecording] = useState(false);
+  
+  // 레시피 타이머 관련 상태
+  const [remainingTime, setRemainingTime] = useState<number>(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 프로그램 시작 시 항상 '레시피 시작' 상태로 시작
   // 서버 상태와 관계없이 isRecording은 false로 유지
+  
+  // 레시피 타이머 useEffect
+  useEffect(() => {
+    if (isTimerRunning && remainingTime > 0) {
+      timerRef.current = setInterval(() => {
+        setRemainingTime((prev) => {
+          if (prev <= 1) {
+            // 타이머 종료
+            setIsTimerRunning(false);
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+              timerRef.current = null;
+            }
+            alert('현재 레시피가 끝났습니다');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [isTimerRunning]);
 
   useEffect(() => {
     if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {
@@ -105,12 +146,21 @@ export function FunctionButtonPanel({
       if (result.success) {
         // 전송 성공 시에만 파일명 저장
         setSelectedRecipe(file.name);
-        console.log(`Recipe ${file.name} sent successfully`);
-        alert(`레시피 "${file.name}" 전송 완료`);
+        
+        // 전체 시간 계산: STEP * DATA 개수
+        const step = parseInt(recipeData.STEP) || 0;
+        const dataCount = Array.isArray(recipeData.DATA) ? recipeData.DATA.length : 0;
+        const totalTime = step * dataCount;
+        setRemainingTime(totalTime);
+        setIsTimerRunning(false); // 타이머는 아직 시작하지 않음
+        
+        console.log(`Recipe ${file.name} sent successfully. Total time: ${totalTime} seconds (${formatTime(totalTime)})`);
+        alert(`레시피 "${file.name}" 전송 완료\n예상 소요 시간: ${formatTime(totalTime)}`);
       } else {
         console.error('Failed to send recipe:', result.error);
         alert(`레시피 전송 실패: ${result.error || '알 수 없는 오류'}`);
         setSelectedRecipe(null);
+        setRemainingTime(0);
       }
     } catch (error) {
       console.error('Failed to process recipe file:', error);
@@ -171,6 +221,10 @@ export function FunctionButtonPanel({
       const response = await apiClient.startRecording();
       if (response.is_recording) {
         setIsRecording(true);
+        // 타이머 시작
+        if (remainingTime > 0) {
+          setIsTimerRunning(true);
+        }
         console.log('Recording started');
       }
     } catch (error) {
@@ -185,6 +239,8 @@ export function FunctionButtonPanel({
       const response = await apiClient.pauseRecording();
       if (!response.is_recording) {
         setIsRecording(false);
+        // 타이머 일시정지
+        setIsTimerRunning(false);
         console.log('Recording paused');
       }
     } catch (error) {
@@ -199,6 +255,10 @@ export function FunctionButtonPanel({
       const response = await apiClient.stopRecording();
       if (!response.is_recording) {
         setIsRecording(false);
+        // 타이머 종료 및 초기화
+        setIsTimerRunning(false);
+        setRemainingTime(0);
+        setSelectedRecipe(null);
         console.log('Recording stopped');
       }
     } catch (error) {
@@ -357,6 +417,23 @@ export function FunctionButtonPanel({
             <span className="text-slate-500">펌웨어 버전</span>
             <span className="text-slate-700">{firmwareVersion}</span>
           </div>
+          {/* 레시피 남은 시간 표시 */}
+          {remainingTime > 0 && (
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-500" />
+                <span className="text-slate-500">남은 시간</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isTimerRunning && (
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                )}
+                <span className={`font-mono text-lg ${isTimerRunning ? 'text-emerald-600' : 'text-slate-600'}`}>
+                  {formatTime(remainingTime)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

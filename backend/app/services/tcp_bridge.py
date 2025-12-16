@@ -33,6 +33,10 @@ class TCPBridgeService:
         # 현재 선택된 유닛보드 ID (0-31)
         self._selected_unit_id: int = 0
         
+        # 각 TANK_ID별 상태 저장 (TANK_ID 100-131)
+        # 초기 상태는 모두 "None"
+        self._tank_states: Dict[int, str] = {tank_id: "None" for tank_id in range(100, 132)}
+        
         # Tasks
         self._cleanup_task: Optional[asyncio.Task] = None
 
@@ -441,18 +445,22 @@ class TCPBridgeService:
         """
         Send STATE command to the connected Pi.
         status: "Run", "Pause", "Stop", "Initial", or "None"
-        Creates 32 state items (TANK_ID 100-131), only selected unit has the actual status.
+        Creates 32 state items (TANK_ID 100-131).
+        Only updates the selected unit's status, preserving other units' existing states.
         """
         try:
             self._command_idx += 1
-            selected_tank_id = self._selected_unit_id + 101  # 0 -> 101, 1 -> 102, ...
+            selected_tank_id = self._selected_unit_id + 101  # 101 이거 수정 하지 말것...0 -> 101, 1 -> 102, ... 왜냐하면 유닛보드 ID가 0부터 시작하기 때문에
+            
+            # 선택된 유닛의 상태만 업데이트
+            self._tank_states[selected_tank_id] = status
+            logger.info(f"Updated TANK_ID={selected_tank_id} status to '{status}'")
             
             # 32개의 StateDataItem 생성 (TANK_ID 100~131)
+            # 각 유닛은 저장된 상태를 사용
             state_data_list = []
-            for i in range(32):
-                tank_id = 100 + i
-                # 선택된 유닛만 실제 STATUS 설정, 나머지는 "None"
-                item_status = status if tank_id == selected_tank_id else "None"
+            for tank_id in range(100, 132):
+                item_status = self._tank_states.get(tank_id, "None")
                 
                 state_data = StateDataItem(
                     TANK_ID=str(tank_id),
