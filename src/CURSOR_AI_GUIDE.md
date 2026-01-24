@@ -17,6 +17,11 @@ Unitboardmonitoringdashboard/
 │   │   └── useWebSocket.ts     # 실시간 데이터 수신
 │   └── main.tsx
 │
+├── sensor_view/                 # 센서 DB 조회 UI (Python)
+│   ├── app.py                   # Tkinter 기반 UI
+│   ├── requirements.txt
+│   └── README.md
+│
 └── backend/                     # Litestar 백엔드
     ├── main.py                  # 진입점 (uvicorn 실행)
     ├── app/

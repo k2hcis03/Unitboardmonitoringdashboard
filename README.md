@@ -80,6 +80,22 @@ npm run dev
 
 프론트엔드가 `http://localhost:3000`에서 실행됩니다.
 
+### Sensor Viewer 실행
+
+```bash
+cd sensor_view
+
+# 가상환경 생성 (Windows)
+python -m venv venv
+venv\Scripts\activate
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# UI 실행
+python app.py
+```
+
 ## 📁 프로젝트 구조
 
 ```
@@ -117,6 +133,11 @@ Unitboardmonitoringdashboard/
 │   │   └── useWebSocket.ts     # WebSocket 훅
 │   ├── App.tsx
 │   └── main.tsx
+│
+├── sensor_view/                 # 센서 DB 조회 UI (Python)
+│   ├── app.py                   # 메인 UI 앱
+│   ├── requirements.txt         # UI 의존성
+│   └── README.md
 │
 ├── package.json
 ├── vite.config.ts
