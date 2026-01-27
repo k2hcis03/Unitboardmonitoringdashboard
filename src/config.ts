@@ -4,8 +4,8 @@
  * 없으면 현재 브라우저의 호스트(window.location.hostname)를 기반으로 자동 설정합니다.
  */
 
-// 백엔드 포트 설정 (기본값: 9000)
-const BACKEND_PORT = 9000;
+// 백엔드 포트 설정 (기본값: 9001)
+const BACKEND_PORT = 9001;
 
 // 현재 호스트 가져오기 (브라우저 주소창의 도메인/IP)
 const currentHost = window.location.hostname;
