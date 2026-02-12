@@ -15,6 +15,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from './ui/accordion';
+import { getTankIdForUnit } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Checkbox } from './ui/checkbox';
@@ -83,10 +84,11 @@ export function DashboardPanel({ selectedUnitId, tempSelection, onTempSelectionC
         };
 
         let hasDataForUnit = false;
+        // 라즈베리파이 TANK_ID ↔ 유닛보드 매핑 테이블 사용 (config.UNIT_TO_TANK_ID)
+        const targetTankId = getTankIdForUnit(selectedUnitId);
+        const targetTankIdStr = targetTankId.toString();
 
         sensorData.VALUES.forEach((item: any) => {
-            // TANK_ID 매핑: StatusMonitoringCard와 동일하게 처리 (101 + index)
-            const targetTankIdStr = (selectedUnitId + 101).toString();
             const itemTankIdStr = item.TANK_ID.toString();
 
             if (itemTankIdStr === targetTankIdStr) {
@@ -101,12 +103,12 @@ export function DashboardPanel({ selectedUnitId, tempSelection, onTempSelectionC
                     newPoint.ph = val;
                 } else if (sensorId === 300) {
                     newPoint.co2 = val;
-                } else if (sensorId === 700) { 
-                    newPoint.flow = val;
+                } else if (sensorId === 700) {
+                  newPoint.brix = val;
                 } else if (sensorId === 900) {
-                     newPoint.brix = val;
-                } else if (sensorId === 400) {
-                     newPoint.load_cell = val;
+                    newPoint.flow = val;
+                }  else if (sensorId === 400) {
+                    newPoint.load_cell = val;
                 }
             }
         });

@@ -1,5 +1,6 @@
 import { Thermometer, Droplets, Wind, Gauge, Activity, Scale } from 'lucide-react';
 import React, { useEffect, useState, useMemo } from 'react';
+import { getTankIdForUnit } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 interface StatusMonitoringCardProps {
@@ -56,43 +57,38 @@ export function StatusMonitoringCard({ selectedUnitId }: StatusMonitoringCardPro
   }, [lastMessage]);
 
   // Helper to get value for current selected unit
-  // User Requirement: 
-  // "유닛보드 1번을 선택하면 라즈베리파이에서 전송하는 센서 데이터 TANK_ID가 101번일 때야."
-  // "유닛보드 0는 무시"
-  // Mapping: Unit 1 (selectedUnitId=0 in code because of 0-index from FunctionButtonPanel)
-  // So if selectedUnitId is 0 (which means Unit 1), we want TANK_ID 101.
-  // Formula: 101 + selectedUnitId
-  const currentTankId = 101 + selectedUnitId; 
-  
+  // 라즈베리파이 TANK_ID ↔ 유닛보드 매핑 테이블 사용 (config.UNIT_TO_TANK_ID)
+  const currentTankId = getTankIdForUnit(selectedUnitId);
+
   const getValue = (sensorId: number, defaultValue: string) => {
     return sensorValues[currentTankId]?.[sensorId] || defaultValue;
   };
 
   // 센서 데이터 구성
   const sensorData = useMemo(() => [
-    { icon: Thermometer, name: '온도센서1', value: getValue(100, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서2', value: getValue(101, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서3', value: getValue(102, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서4', value: getValue(103, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서5', value: getValue(104, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서6', value: getValue(105, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서7', value: getValue(106, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서8', value: getValue(107, '0.0'), unit: '°C' },
-    { icon: Droplets, name: 'pH 센서', value: getValue(800, '0.0'), unit: 'pH' },
-    { icon: Wind, name: 'CO₂ 센서', value: getValue(300, '0.0'), unit: 'ppm' },
-    { icon: Activity, name: '유량 센서', value: getValue(700, '0.0'), unit: 'L/min' },
-    { icon: Gauge, name: '당도 센서', value: getValue(900, '0.0'), unit: 'Brix' }, 
-    { icon: Scale, name: '로드셀', value: getValue(400, '0.0'), unit: 'kg' },
+    { icon: Thermometer, name: '온도센서1', value: getValue(1100, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서2', value: getValue(1101, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서3', value: getValue(1102, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서4', value: getValue(1103, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서5', value: getValue(1104, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서6', value: getValue(1105, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서7', value: getValue(1106, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '온도센서8', value: getValue(1107, '0.0'), unit: '°C' },
+    { icon: Droplets, name: 'pH 센서', value: getValue(1800, '0.0'), unit: 'pH' },
+    { icon: Wind, name: 'CO₂ 센서', value: getValue(1300, '0.0'), unit: 'ppm' },
+    { icon: Gauge, name: '당도 센서', value: getValue(1700, '0.0'), unit: 'Brix' }, 
+    { icon: Activity, name: '유량 센서', value: getValue(2000, '0.0'), unit: 'L/min' },
+    { icon: Scale, name: '로드셀', value: getValue(1400, '0.0'), unit: 'kg' },
   ], [sensorValues, currentTankId]);
 
   // 유닛보드 상태 데이터 구성
   // 500~: Valves (500=V1, 501=V2...), 600: Motor Speed
   const statusData = useMemo(() => [
-    { name: '모터 속도', value: getValue(600, '0') + ' RPM', highlight: true },
-    { name: '밸브1', value: getValue(500, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(500, '0') === '1' },
-    { name: '밸브2', value: getValue(501, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(501, '0') === '1' },
-    { name: '밸브3', value: getValue(502, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(502, '0') === '1' },
-    { name: '밸브4', value: getValue(503, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(503, '0') === '1' },
+    { name: '모터 속도', value: getValue(1600, '0') + ' RPM', highlight: true },
+    { name: '밸브1', value: getValue(1500, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(1500, '0') === '1' },
+    { name: '밸브2', value: getValue(1501, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(1501, '0') === '1' },
+    { name: '밸브3', value: getValue(1502, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(1502, '0') === '1' },
+    { name: '밸브4', value: getValue(1503, '0') === '1' ? 'ON' : 'OFF', isOn: getValue(1503, '0') === '1' },
   ], [sensorValues, currentTankId]);
 
   return (
