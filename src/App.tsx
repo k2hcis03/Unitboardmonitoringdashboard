@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { StatusMonitoringCard } from './components/StatusMonitoringCard';
 import { GPIOControlPanel } from './components/GPIOControlPanel';
 import { FunctionButtonPanel } from './components/FunctionButtonPanel';
 import { DashboardPanel } from './components/DashboardPanel';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { getTankIdForUnit } from './config';
 import { apiClient } from './services/api';
 
 export default function App() {
@@ -33,14 +34,16 @@ export default function App() {
     setGpioStates(newStates);
     
     // GPIO 변경 시 모든 GPIO 상태를 JSON으로 백엔드로 전송
+    // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
+    const mappedUnitId = getTankIdForUnit(selectedUnitId);
     try {
       await apiClient.controlGPIOBulk({
-        unit_id: selectedUnitId,
+        unit_id: mappedUnitId,
         gpio_states: newStates,
       });
       
       console.log('GPIO 상태가 백엔드로 전송되었습니다:', {
-        unit_id: selectedUnitId,
+        unit_id: mappedUnitId,
         gpio_states: newStates,
       });
     } catch (error) {
@@ -50,83 +53,14 @@ export default function App() {
     }
   };
 
-  // 모터 속도 변경 디바운싱을 위한 ref
-  const motorSpeedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const motorTimeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleMotorSpeedChange = async (speed: number) => {
+  // 모터 속도/시간 변경은 UI 상태만 업데이트 (ON/OFF 토글 시에만 백엔드로 전송)
+  const handleMotorSpeedChange = (speed: number) => {
     setMotorSpeed(speed);
-    
-    // 이전 타이머가 있으면 취소
-    if (motorSpeedTimeoutRef.current) {
-      clearTimeout(motorSpeedTimeoutRef.current);
-    }
-    
-    // 300ms 후에 백엔드로 전송 (슬라이더 드래그 중 과도한 요청 방지)
-    motorSpeedTimeoutRef.current = setTimeout(async () => {
-      try {
-        await apiClient.controlMotor({
-          unit_id: selectedUnitId,
-          is_on: motorOn,
-          speed: speed,
-        });
-        
-        console.log('모터 속도가 백엔드로 전송되었습니다:', {
-          unit_id: selectedUnitId,
-          is_on: motorOn,
-          speed: speed,
-        });
-      } catch (error) {
-        console.error('모터 속도 제어 실패:', error);
-        // 에러 발생 시 이전 속도로 복원
-        setMotorSpeed(motorSpeed);
-      }
-    }, 300);
   };
 
-  const handleMotorTimeChange = async (time: number) => {
+  const handleMotorTimeChange = (time: number) => {
     setMotorTime(time);
-    
-    // 이전 타이머가 있으면 취소
-    if (motorTimeTimeoutRef.current) {
-      clearTimeout(motorTimeTimeoutRef.current);
-    }
-    
-    // 300ms 후에 백엔드로 전송
-    motorTimeTimeoutRef.current = setTimeout(async () => {
-      try {
-        await apiClient.controlMotor({
-          unit_id: selectedUnitId,
-          is_on: motorOn,
-          speed: motorSpeed,
-          time: time,
-        });
-        
-        console.log('모터 시간이 백엔드로 전송되었습니다:', {
-          unit_id: selectedUnitId,
-          is_on: motorOn,
-          speed: motorSpeed,
-          time: time,
-        });
-      } catch (error) {
-        console.error('모터 시간 제어 실패:', error);
-        // 에러 발생 시 이전 시간으로 복원 (optional)
-        setMotorTime(motorTime);
-      }
-    }, 300);
   };
-
-  // 컴포넌트 언마운트 시 타이머 정리
-  useEffect(() => {
-    return () => {
-      if (motorSpeedTimeoutRef.current) {
-        clearTimeout(motorSpeedTimeoutRef.current);
-      }
-      if (motorTimeTimeoutRef.current) {
-        clearTimeout(motorTimeTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // 초기 로드 시 유닛 1(index 0)에 대한 펌웨어 버전 요청
   useEffect(() => {
@@ -146,20 +80,28 @@ export default function App() {
   const handleMotorToggle = async (isOn: boolean) => {
     setMotorOn(isOn);
     
+    // OFF 시 시간을 0으로 초기화
+    const sendTime = isOn ? motorTime : 0;
+    if (!isOn) {
+      setMotorTime(0);
+    }
+    
     // 모터 ON/OFF 토글 시 백엔드로 전송
+    // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
+    const mappedUnitId = getTankIdForUnit(selectedUnitId);
     try {
       await apiClient.controlMotor({
-        unit_id: selectedUnitId,
+        unit_id: mappedUnitId,
         is_on: isOn,
         speed: motorSpeed,
-        time: motorTime,
+        time: sendTime,
       });
       
       console.log('모터 상태가 백엔드로 전송되었습니다:', {
-        unit_id: selectedUnitId,
+        unit_id: mappedUnitId,
         is_on: isOn,
         speed: motorSpeed,
-        time: motorTime,
+        time: sendTime,
       });
     } catch (error) {
       console.error('모터 제어 실패:', error);

@@ -6,9 +6,10 @@
 
 /**
  * 라즈베리파이 TANK_ID ↔ 프론트엔드 유닛보드 번호 매핑
- * - 데이터 수신 시에만 사용 (명령 전송은 selectedUnitId 그대로 유지)
- * - UNIT_TO_TANK_ID[유닛보드 index] = 해당 유닛에 표시할 TANK_ID
- * 예: 유닛보드 1 → TANK_ID 601, 유닛보드 2 → TANK_ID 101
+ * - 데이터 수신 시: 선택한 유닛보드에 표시할 TANK_ID 결정
+ * - 명령 전송 시: 선택한 유닛보드의 unit_id를 매핑된 TANK_ID로 변환하여 전송
+ * - UNIT_TO_TANK_ID[유닛보드 index] = 해당 유닛에 사용할 TANK_ID
+ * 예: 유닛보드 1 (index 0) → TANK_ID 601, 유닛보드 2 (index 1) → TANK_ID 101
  */
 export const UNIT_TO_TANK_ID: number[] = [
   601,  // 유닛보드 1 (index 0)

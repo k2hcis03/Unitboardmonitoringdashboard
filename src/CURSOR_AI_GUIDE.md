@@ -483,3 +483,37 @@ websocat ws://localhost:8000/ws/status
 - [ ] 실시간 센서 데이터 WebSocket 연동
 - [ ] 상태 모니터링 카드 백엔드 연동
 - [ ] 에러 처리 및 로깅 개선
+
+---
+
+## 📡 SENSOR 패킷 ERROR 필드
+
+라즈베리파이에서 전송하는 SENSOR JSON 패킷에 `ERROR` 배열이 포함됩니다.
+
+### 데이터 포맷
+```json
+{
+  "CMD": "SENSOR",
+  "ERROR": [
+    {"TANK_ID": 100, "CODE": "0"},
+    {"TANK_ID": 101, "CODE": "1"}
+  ]
+}
+```
+
+### 백엔드 모델 (`protocol.py`)
+```python
+class ErrorItem(BaseModel):
+    tank_id: Union[str, int] = Field(..., alias="TANK_ID")
+    code: str = Field(..., alias="CODE")
+
+class SensorPacket(BaseModel):
+    # ... 기존 필드 ...
+    error: List[ErrorItem] = Field(default_factory=list, alias="ERROR")
+```
+
+### 프론트엔드 처리 (`FunctionButtonPanel.tsx`)
+- SENSOR_UPDATE WebSocket 메시지에서 ERROR 배열을 읽음
+- 현재 선택된 유닛보드의 TANK_ID에 매칭되는 ERROR 항목을 찾음
+- CODE가 `"0"`이면 녹색 LED + "정상" 표시
+- CODE가 `"0"`이 아니면 빨간색 LED + "에러: {CODE}" 표시

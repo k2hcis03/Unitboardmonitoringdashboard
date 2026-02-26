@@ -21,6 +21,15 @@ class TankState(BaseModel):
     stage: int = Field(..., alias="STAGE")
     status: str = Field(..., alias="STATUS")
 
+class ErrorItem(BaseModel):
+    tank_id: Union[str, int] = Field(..., alias="TANK_ID")
+    code: str = Field(..., alias="CODE")
+
+    @field_validator('tank_id')
+    @classmethod
+    def parse_tank_id(cls, v):
+        return int(v)
+
 class SensorPacket(BaseModel):
     cmd: str = Field("SENSOR", alias="CMD")
     order: int = Field(..., alias="ORDER")
@@ -28,6 +37,7 @@ class SensorPacket(BaseModel):
     time: str = Field(..., alias="TIME")
     values: List[SensorValue] = Field(..., alias="VALUES")
     state: List[TankState] = Field(..., alias="STATE")
+    error: List[ErrorItem] = Field(default_factory=list, alias="ERROR")
 
 # -----------------------------------------------------------------------------
 # 2. ACK Structures

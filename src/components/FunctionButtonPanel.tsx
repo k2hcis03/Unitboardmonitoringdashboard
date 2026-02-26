@@ -1,5 +1,6 @@
 import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2, Clock } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
+import { getTankIdForUnit } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 import { apiClient } from '../services/api';
@@ -33,6 +34,7 @@ export function FunctionButtonPanel({
   const [isPiConnected, setIsPiConnected] = useState(false);
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
   const [isRecording, setIsRecording] = useState(false);
+  const [errorCode, setErrorCode] = useState<string>('0');
 
   // 레시피 타이머 관련 상태
   const [remainingTime, setRemainingTime] = useState<number>(0);
@@ -78,16 +80,28 @@ export function FunctionButtonPanel({
     if (lastMessage?.type === 'ACK_INITIALIZE_RECEIVED') {
       const data = lastMessage.data;
       if (data && data.FW_VERSION) {
-         // FW_VERSION 값을 숫자로 변환 후 100으로 나누어 소수점 2자리까지 표시 (v 접두어 포함)
          const versionNum = parseFloat(data.FW_VERSION);
          if (!isNaN(versionNum)) {
            setFirmwareVersion(`v${(versionNum / 100).toFixed(2)}`);
          } else {
-           setFirmwareVersion(data.FW_VERSION); // 숫자가 아니면 그대로 표시
+           setFirmwareVersion(data.FW_VERSION);
          }
       }
     }
-  }, [lastMessage]);
+
+    if (lastMessage?.type === 'SENSOR_UPDATE') {
+      const errorArray = lastMessage.data?.ERROR;
+      if (Array.isArray(errorArray)) {
+        const currentTankId = getTankIdForUnit(selectedUnitId);
+        const matched = errorArray.find(
+          (item: { TANK_ID: number; CODE: string }) => Number(item.TANK_ID) === currentTankId
+        );
+        if (matched) {
+          setErrorCode(matched.CODE);
+        }
+      }
+    }
+  }, [lastMessage, selectedUnitId]);
 
   useEffect(() => {
     // 초기 로드 시 유닛 1(index 0)에 대한 펌웨어 버전 요청을 위해 UNIT_SELECT 메시지 전송
@@ -105,9 +119,11 @@ export function FunctionButtonPanel({
     onUnitIdChange(unitId); // 1-32를 0-31로 변환
     
     // Send selection to backend via WebSocket
+    // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
+    const mappedUnitId = getTankIdForUnit(unitId);
     sendMessage({
       type: 'UNIT_SELECT',
-      unit_id: unitId
+      unit_id: mappedUnitId
     });
     
     setShowUnitSelector(false);
@@ -194,9 +210,11 @@ export function FunctionButtonPanel({
         
         // 웹 브라우저의 보안 정책으로 인해 실제 전체 경로(C:\...)는 JavaScript로 읽을 수 없습니다.
         // 따라서 파일 이름만이라도 정확히 전송합니다.
-        console.log(`Firmware update request: Unit ${selectedUnitId}, File ${file.name}`);
+        // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
+        const mappedUnitId = getTankIdForUnit(selectedUnitId);
+        console.log(`Firmware update request: Unit ${selectedUnitId} (mapped to ${mappedUnitId}), File ${file.name}`);
         
-        await apiClient.updateFirmware(selectedUnitId, file.name);
+        await apiClient.updateFirmware(mappedUnitId, file.name);
         
         console.log('Firmware update command sent successfully');
       } catch (error) {
@@ -400,8 +418,10 @@ export function FunctionButtonPanel({
           <div className="flex items-center justify-between">
             <span className="text-slate-500">시스템 상태</span>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              <span className="text-emerald-600">정상</span>
+              <div className={`w-2 h-2 rounded-full ${errorCode === '0' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500 animate-pulse'}`}></div>
+              <span className={errorCode === '0' ? 'text-emerald-600' : 'text-rose-600 font-semibold'}>
+                {errorCode === '0' ? '정상' : `에러: ${errorCode}`}
+              </span>
             </div>
           </div>
           <div className="flex items-center justify-between">

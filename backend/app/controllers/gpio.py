@@ -63,14 +63,14 @@ class GPIOController(Controller):
         logger = logging.getLogger(__name__)
         global idx
         idx = idx + 1
-        logger.info(f"Sending TEMP_RPM command for Unit {data.unit_id} (Tank {data.unit_id+101})")
+        logger.info(f"Sending TEMP_RPM command for Unit {data.unit_id} (Tank {data.unit_id})")
 
         try:
             await tcp_bridge.send_command(CommandPacketMotor(
                 cmd='TEMP_RPM',
-                unit_id=data.unit_id+1,
+                unit_id=str(data.unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
                 idx=str(idx),
-                tank_id=str(data.unit_id+101),
+                tank_id=str(data.unit_id),  # unit_id가 곧 TANK_ID
                 speed=data.speed if data.is_on else 0,
                 onoff="ON" if data.speed else "OFF",
                 dir= 0,
@@ -124,13 +124,13 @@ class GPIOController(Controller):
         
         global idx
         idx = idx + 1
-        logger.info(f"Sending CTRL command for Unit {data.unit_id} (Tank {data.unit_id+101})")
+        logger.info(f"Sending CTRL command for Unit {data.unit_id} (Tank {data.unit_id})")
 
         try:
             # await tcp_bridge.send_command(CommandPacket(
             #     cmd='CTRL',
             #     idx=str(idx),
-            #     tank_id=str(data.unit_id+101),
+            #     tank_id=str(data.unit_id),
             #     ctrl=[
             #         ControlValue(
             #             sensor_id = str(i + 500),
@@ -142,9 +142,9 @@ class GPIOController(Controller):
             # ))
             await tcp_bridge.send_command(CommandPacketGpio(
                 cmd='SET_GPIO',
-                unit_id=data.unit_id+1,
+                unit_id=str(data.unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
                 idx=str(idx),
-                tank_id=str(data.unit_id+101),
+                tank_id=str(data.unit_id),  # unit_id가 곧 TANK_ID
                 value=[state for state in data.gpio_states],
             ))
             logger.info("Command sent successfully")

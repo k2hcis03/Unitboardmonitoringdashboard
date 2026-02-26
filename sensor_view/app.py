@@ -20,7 +20,8 @@ class SensorViewerApp:
         self.tank_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Ready.")
 
-        self.sensor_id_list: list[int] = []
+        self.sensor_id_list: list[int] = []  # 하위 호환용 (단일 sensor_id 선택 시)
+        self.tank_sensor_list: list[tuple[str, int]] = []  # (tank_id, sensor_id) 목록 — DB의 실제 시계열 개수 반영
         self.table_data: list[tuple] = []
         self.filtered_data: list[tuple] = []  # 필터된 데이터 (현재 테이블에 표시된 데이터)
 
@@ -178,8 +179,9 @@ class SensorViewerApp:
 
                 min_time, max_time = self._fetch_time_range(conn)
                 sensor_counts = self._fetch_sensor_counts(conn)
+                total_readings = self._fetch_total_readings(conn)
 
-            self._update_info(min_time, max_time, sensor_counts)
+            self._update_info(min_time, max_time, sensor_counts, total_readings)
             self.status_var.set("DB info loaded.")
         except sqlite3.Error as exc:
             messagebox.showerror("DB Error", str(exc))
@@ -199,17 +201,27 @@ class SensorViewerApp:
             return None, None
         return row[0], row[1]
 
-    def _fetch_sensor_counts(self, conn: sqlite3.Connection) -> list[tuple[int, int]]:
+    def _fetch_total_readings(self, conn: sqlite3.Connection) -> int:
+        """readings 테이블 전체 행 수 (검증용)."""
+        row = conn.execute("SELECT COUNT(*) FROM readings").fetchone()
+        return int(row[0]) if row else 0
+
+    def _fetch_sensor_counts(self, conn: sqlite3.Connection) -> list[tuple[str, int, int]]:
+        """(tank_id, sensor_id) 조합별 행 개수 조회. 동일 sensor_id가 여러 탱크에 있으면 각각 별도 시계열로 센다."""
         rows = conn.execute(
-            "SELECT sensor_id, COUNT(*) FROM readings GROUP BY sensor_id ORDER BY sensor_id"
+            """SELECT tank_id, sensor_id, COUNT(*)
+               FROM readings
+               GROUP BY tank_id, sensor_id
+               ORDER BY tank_id, sensor_id"""
         ).fetchall()
-        return [(int(sensor_id), int(count)) for sensor_id, count in rows]
+        return [(str(tank_id), int(sensor_id), int(count)) for tank_id, sensor_id, count in rows]
 
     def _update_info(
         self,
         min_time: str | None,
         max_time: str | None,
-        sensor_counts: list[tuple[int, int]],
+        sensor_counts: list[tuple[str, int, int]],
+        total_readings: int = 0,
     ) -> None:
         if min_time and max_time:
             self.time_range_label.config(
@@ -222,10 +234,14 @@ class SensorViewerApp:
 
         self.sensor_listbox.delete(0, tk.END)
         self.sensor_id_list = []
-        for sensor_id, count in sensor_counts:
-            self.sensor_id_list.append(sensor_id)
-            self.sensor_listbox.insert(tk.END, f"{sensor_id} ({count})")
-        self.sensor_count_label.config(text=f"Sensors: {len(sensor_counts)}")
+        self.tank_sensor_list = []
+        for tank_id, sensor_id, count in sensor_counts:
+            self.tank_sensor_list.append((tank_id, sensor_id))
+            self.sensor_id_list.append(sensor_id)  # 리스트박스 인덱스와 동일 순서 유지
+            self.sensor_listbox.insert(tk.END, f"{tank_id}-{sensor_id} ({count})")
+        self.sensor_count_label.config(
+            text=f"Sensors: {len(sensor_counts)} (tank×sensor) | Total rows: {total_readings}"
+        )
 
     def use_min_time(self) -> None:
         label = self.time_range_label.cget("text")
@@ -237,59 +253,63 @@ class SensorViewerApp:
         if "~" in label:
             self.end_var.set(label.split("~")[1].strip())
 
+    def _fetch_readings_by_criteria(self, limit: int | None = None) -> list[tuple]:
+        """날짜·탱크·센서 조건에 맞는 readings 조회. limit=None이면 전체, 정수면 해당 개수만."""
+        db_path = self.db_path_var.get().strip()
+        if not db_path:
+            return []
+        start_text = self.start_var.get().strip()
+        end_text = self.end_var.get().strip()
+        if not start_text or not end_text:
+            return []
+        selected_pairs = self._get_selected_tank_sensor_pairs()
+        tank_filter = self.tank_var.get().strip()
+
+        query = """
+            SELECT r.id, r.packet_id, r.tank_id, r.sensor_id, r.value
+            FROM readings r
+            JOIN packets p ON r.packet_id = p.id
+            WHERE p.created_at BETWEEN ? AND ?
+        """
+        params: list = [start_text, end_text]
+        if selected_pairs:
+            conds = " OR ".join(
+                "(r.tank_id = ? AND r.sensor_id = ?)" for _ in selected_pairs
+            )
+            query += f" AND ({conds})"
+            for t_id, s_id in selected_pairs:
+                params.append(t_id)
+                params.append(s_id)
+        if tank_filter:
+            query += " AND r.tank_id = ?"
+            params.append(tank_filter)
+        query += " ORDER BY r.id ASC"
+        if limit is not None:
+            query += f" LIMIT {limit}"
+
+        try:
+            with sqlite3.connect(db_path) as conn:
+                return conn.execute(query, params).fetchall()
+        except sqlite3.Error:
+            return []
+
     def load_data_table(self) -> None:
-        """DB Browser처럼 readings 테이블 데이터를 테이블에 표시"""
+        """DB Browser처럼 readings 테이블 데이터를 테이블에 표시 (최대 5000행)."""
         db_path = self.db_path_var.get().strip()
         if not db_path:
             messagebox.showwarning("Missing DB", "Please select a database file.")
             return
-
         start_text = self.start_var.get().strip()
         end_text = self.end_var.get().strip()
         if not start_text or not end_text:
             messagebox.showwarning("Missing Range", "Please enter start and end time.")
             return
 
-        selected_ids = self._get_selected_sensor_ids()
-        tank_id = self.tank_var.get().strip()
-
         try:
-            with sqlite3.connect(db_path) as conn:
-                # 쿼리 작성
-                if selected_ids:
-                    placeholders = ",".join("?" for _ in selected_ids)
-                    query = f"""
-                        SELECT r.id, r.packet_id, r.tank_id, r.sensor_id, r.value
-                        FROM readings r
-                        JOIN packets p ON r.packet_id = p.id
-                        WHERE p.created_at BETWEEN ? AND ?
-                          AND r.sensor_id IN ({placeholders})
-                    """
-                    params: list = [start_text, end_text, *selected_ids]
-                else:
-                    query = """
-                        SELECT r.id, r.packet_id, r.tank_id, r.sensor_id, r.value
-                        FROM readings r
-                        JOIN packets p ON r.packet_id = p.id
-                        WHERE p.created_at BETWEEN ? AND ?
-                    """
-                    params = [start_text, end_text]
-
-                if tank_id:
-                    query += " AND r.tank_id = ?"
-                    params.append(tank_id)
-
-                query += " ORDER BY r.id ASC LIMIT 5000"  # 성능을 위해 5000개 제한
-
-                rows = conn.execute(query, params).fetchall()
-
-            # 전체 데이터 저장 (필터용)
+            rows = self._fetch_readings_by_criteria(limit=5000)
             self.table_data = rows
-
-            # 필터 초기화
             self.clear_filter()
-
-            self.status_var.set(f"Loaded {len(rows)} rows (max 5000).")
+            self.status_var.set(f"Loaded {len(rows)} rows (max 5000 for table).")
         except sqlite3.Error as exc:
             messagebox.showerror("DB Error", str(exc))
 
@@ -339,15 +359,25 @@ class SensorViewerApp:
         self.status_var.set(f"Showing {len(self.table_data)} rows.")
 
     def plot_selected(self) -> None:
-        """필터된 데이터(Data Table에 표시된 데이터)를 그래프로 표시"""
-        if not self.filtered_data:
-            messagebox.showwarning("No Data", "Load data first using 'Load Data' button.")
+        """날짜·선택 조건에 맞는 전체 데이터를 그래프로 표시 (제한 없음)."""
+        db_path = self.db_path_var.get().strip()
+        if not db_path:
+            messagebox.showwarning("Missing DB", "Please select a database file.")
+            return
+        start_text = self.start_var.get().strip()
+        end_text = self.end_var.get().strip()
+        if not start_text or not end_text:
+            messagebox.showwarning("Missing Range", "Please enter start and end time.")
             return
 
-        # filtered_data: (id, packet_id, tank_id, sensor_id, value)
-        # DataFrame으로 변환
+        rows = self._fetch_readings_by_criteria(limit=None)
+        if not rows:
+            messagebox.showwarning("No Data", "No data in the selected date range and filters.")
+            self._clear_plot()
+            return
+
         df = pd.DataFrame(
-            self.filtered_data,
+            rows,
             columns=["id", "packet_id", "tank_id", "sensor_id", "value"]
         )
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
@@ -358,27 +388,27 @@ class SensorViewerApp:
             self._clear_plot()
             return
 
-        # 탱크+센서 조합으로 구분하여 표시
         df["tank_sensor"] = df["tank_id"].astype(str) + "-" + df["sensor_id"].astype(str)
-        
-        # id를 시간 순서로 사용 (인덱스로 사용)
         self.ax.clear()
         for label in df["tank_sensor"].unique():
             subset = df[df["tank_sensor"] == label]
             self.ax.plot(range(len(subset)), subset["value"].values, label=label)
-        
-        self.ax.set_title("Sensor Data (Filtered)")
+        self.ax.set_title("Sensor Data (Full by date/filter)")
         self.ax.set_xlabel("Index")
         self.ax.set_ylabel("Value")
         self.ax.grid(True, linestyle="--", alpha=0.3)
         self.ax.legend(loc="upper right")
         self.canvas.draw()
 
-        self.status_var.set(f"Plotted {len(df)} data points.")
+        self.status_var.set(f"Plotted {len(df)} data points (full).")
 
     def _get_selected_sensor_ids(self) -> list[int]:
         indices = self.sensor_listbox.curselection()
         return [self.sensor_id_list[i] for i in indices]
+
+    def _get_selected_tank_sensor_pairs(self) -> list[tuple[str, int]]:
+        indices = self.sensor_listbox.curselection()
+        return [self.tank_sensor_list[i] for i in indices]
 
     def _clear_plot(self) -> None:
         self.ax.clear()
@@ -386,11 +416,20 @@ class SensorViewerApp:
         self.canvas.draw()
 
     def export_csv(self) -> None:
-        """필터된 데이터(Data Table에 표시된 데이터)를 CSV로 내보내기"""
-        if not self.filtered_data:
-            messagebox.showwarning(
-                "No Data", "Load data first using 'Load Data' button."
-            )
+        """날짜·선택 조건에 맞는 전체 데이터를 CSV로 내보내기 (제한 없음)."""
+        db_path = self.db_path_var.get().strip()
+        if not db_path:
+            messagebox.showwarning("Missing DB", "Please select a database file.")
+            return
+        start_text = self.start_var.get().strip()
+        end_text = self.end_var.get().strip()
+        if not start_text or not end_text:
+            messagebox.showwarning("Missing Range", "Please enter start and end time.")
+            return
+
+        rows = self._fetch_readings_by_criteria(limit=None)
+        if not rows:
+            messagebox.showwarning("No Data", "No data in the selected date range and filters.")
             return
 
         save_path = filedialog.asksaveasfilename(
@@ -401,13 +440,25 @@ class SensorViewerApp:
         if not save_path:
             return
 
-        # filtered_data를 DataFrame으로 변환하여 저장
-        df = pd.DataFrame(
-            self.filtered_data,
-            columns=["id", "packet_id", "tank_id", "sensor_id", "value"]
-        )
-        df.to_csv(save_path, index=False)
-        self.status_var.set(f"CSV saved: {save_path} ({len(df)} rows)")
+        try:
+            df = pd.DataFrame(
+                rows,
+                columns=["id", "packet_id", "tank_id", "sensor_id", "value"]
+            )
+            df.to_csv(save_path, index=False, encoding="utf-8-sig")
+            self.status_var.set(f"CSV saved: {save_path} ({len(df)} rows, full).")
+        except OSError as e:
+            messagebox.showerror(
+                "Save Error",
+                f"Cannot write file.\n\n{e}",
+            )
+            self.status_var.set("CSV save failed (file/path error).")
+        except Exception as e:
+            messagebox.showerror(
+                "CSV Export Error",
+                f"Export failed.\n\n{e}",
+            )
+            self.status_var.set("CSV export failed.")
 
 
 def main() -> None:

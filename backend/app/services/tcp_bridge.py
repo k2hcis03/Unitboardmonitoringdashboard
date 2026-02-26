@@ -14,6 +14,17 @@ from app.services.db_service import db_service
 logger = logging.getLogger(__name__)
 idx = 0
 
+# 프론트엔드 config.ts의 UNIT_TO_TANK_ID와 동일한 매핑
+# 유닛보드 index(0~31) → 라즈베리파이 TANK_ID
+UNIT_TO_TANK_ID: List[int] = [
+    601,  # 유닛보드 1 (index 0)
+    101,  # 유닛보드 2 (index 1)
+    102,  # 유닛보드 3
+    103,  # 유닛보드 4
+    104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+    116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131  # 유닛보드 5~32
+]
+
 class TCPBridgeService:
     def __init__(self):
         self._receiver_server = None
@@ -30,12 +41,12 @@ class TCPBridgeService:
         # Command index counter
         self._command_idx = 0
         
-        # 현재 선택된 유닛보드 ID (0-31)
-        self._selected_unit_id: int = 0
+        # 현재 선택된 유닛보드 ID (프론트엔드 매핑된 TANK_ID, 기본값: 601 = 유닛보드 1)
+        self._selected_unit_id: int = 601
         
-        # 각 TANK_ID별 상태 저장 (TANK_ID 100-131)
+        # 각 TANK_ID별 상태 저장 (UNIT_TO_TANK_ID 매핑 기반)
         # 초기 상태는 모두 "None"
-        self._tank_states: Dict[int, str] = {tank_id: "None" for tank_id in range(100, 132)}
+        self._tank_states: Dict[int, str] = {tank_id: "None" for tank_id in UNIT_TO_TANK_ID}
         
         # Tasks
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -54,7 +65,7 @@ class TCPBridgeService:
             if loop.is_running():
                  asyncio.create_task(self.send_command(CommandPacketGetVersion(
                     cmd='GET_VERSION',
-                    unit_id=unit_id+1,
+                    unit_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
                     idx=str(idx),
                     send=True,
                 )))
@@ -237,14 +248,14 @@ class TCPBridgeService:
                 packet = AckPacketInitialize(**data)
                 await self.handle_ack_packet_initialize(packet)
             else:
-                logger.warning(f"Unknown CMD received: {cmd}")
+                logger.warning(f"Unknown CMD received: {cmd} | keys: {list(data.keys())} | raw: {json_str[:300]}")
 
         except json.JSONDecodeError:
-            logger.error(f"Invalid JSON received: {json_str[:50]}...")
+            logger.error(f"Invalid JSON received (len={len(json_str)}): {json_str[:200]}...")
         except ValidationError as e:
-            logger.error(f"Validation Error: {e}")
+            logger.error(f"Validation Error for CMD={data.get('CMD') if 'data' in dir() else '?'}: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error parsing message: {e}")
+            logger.error(f"Unexpected error parsing message: {e} | raw: {json_str[:200]}")
 
     async def handle_sensor_packet(self, packet: SensorPacket):
         # Broadcast SENSOR_UPDATE to all clients
@@ -398,7 +409,7 @@ class TCPBridgeService:
         self._command_idx += 1
         packet = CommandPacketFirmware(
             cmd="FIRMWARE_UPDATE",
-            unit_id=unit_id + 1,
+            unit_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
             idx=self._command_idx,
             file="/home/pi/Projects/cosmo-m/firmware/firmware.bin", # 라즈베리파이 펌웨어 전체 경로 포함
             send=False
@@ -426,8 +437,8 @@ class TCPBridgeService:
                 cmd="REF",
                 idx=recipe_data.get("IDX", str(self._command_idx)),
                 # tank_id= recipe_data.get("TANK_ID", "100"),
-                # 선택된 유닛보드 ID를 기반으로 TANK_ID 설정
-                tank_id= str(self._selected_unit_id + 101),
+                # 선택된 유닛보드 ID가 이미 매핑된 TANK_ID이므로 그대로 사용
+                tank_id= str(self._selected_unit_id),
                 stage=recipe_data.get("STAGE", "0"),
                 step=recipe_data.get("STEP", "3600"),
                 data=data_items,
@@ -441,25 +452,30 @@ class TCPBridgeService:
             logger.error(f"Failed to create recipe packet: {e}")
             return False
 
-    async def send_state_command(self, status: str, stage: int = 100) -> bool:
+    async def send_state_command(self, status: str, stage: int = 100, unit_id: Optional[int] = None) -> bool:
         """
         Send STATE command to the connected Pi.
         status: "Run", "Pause", "Stop", "Initial", or "None"
-        Creates 32 state items (TANK_ID 100-131).
+        Creates 32 state items using UNIT_TO_TANK_ID mapping.
         Only updates the selected unit's status, preserving other units' existing states.
+        
+        Args:
+            status: 상태 문자열
+            stage: 공정 단계 (기본값: 100)
+            unit_id: 특정 유닛의 TANK_ID (None이면 현재 선택된 유닛 사용)
         """
         try:
             self._command_idx += 1
-            selected_tank_id = self._selected_unit_id + 101  # 101 이거 수정 하지 말것...0 -> 101, 1 -> 102, ... 왜냐하면 유닛보드 ID가 0부터 시작하기 때문에
+            selected_tank_id = unit_id if unit_id is not None else self._selected_unit_id
             
             # 선택된 유닛의 상태만 업데이트
             self._tank_states[selected_tank_id] = status
             logger.info(f"Updated TANK_ID={selected_tank_id} status to '{status}'")
             
-            # 32개의 StateDataItem 생성 (TANK_ID 100~131)
+            # UNIT_TO_TANK_ID 매핑 기반으로 32개의 StateDataItem 생성
             # 각 유닛은 저장된 상태를 사용
             state_data_list = []
-            for tank_id in range(100, 132):
+            for tank_id in UNIT_TO_TANK_ID:
                 item_status = self._tank_states.get(tank_id, "None")
                 
                 state_data = StateDataItem(
