@@ -1,6 +1,6 @@
-import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2, Clock } from 'lucide-react';
+import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2, Clock, Send } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
-import { getTankIdForUnit } from '../config';
+import { getTankIdForUnit, APP_VERSION } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 import { apiClient } from '../services/api';
@@ -35,6 +35,9 @@ export function FunctionButtonPanel({
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
   const [isRecording, setIsRecording] = useState(false);
   const [errorCode, setErrorCode] = useState<string>('0');
+  const [showJsonPanel, setShowJsonPanel] = useState(false);
+  const [jsonInput, setJsonInput] = useState<string>('');
+  const [isSendingJson, setIsSendingJson] = useState(false);
 
   // 레시피 타이머 관련 상태
   const [remainingTime, setRemainingTime] = useState<number>(0);
@@ -285,6 +288,51 @@ export function FunctionButtonPanel({
     }
   };
 
+  const handleJsonSend = async () => {
+    if (!jsonInput.trim()) {
+      alert('JSON 내용을 입력하세요.');
+      return;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(jsonInput);
+    } catch {
+      alert('유효하지 않은 JSON 형식입니다. 확인 후 다시 시도하세요.');
+      return;
+    }
+
+    setIsSendingJson(true);
+    try {
+      const result = await apiClient.sendRawJson(parsed);
+      if (result.success) {
+        alert('JSON 전송 완료');
+      } else {
+        alert(`JSON 전송 실패: ${result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error: any) {
+      console.error('Failed to send raw JSON:', error);
+      alert(`JSON 전송 중 오류가 발생했습니다.\n${error?.message || error}`);
+    } finally {
+      setIsSendingJson(false);
+    }
+  };
+
+  const getJsonTemplate = () => {
+    const mappedUnitId = getTankIdForUnit(selectedUnitId);
+    return JSON.stringify({
+      UNIT_ID: String(mappedUnitId),
+      IDX: 1,
+      TANK_ID: String(mappedUnitId),
+      CMD: "TEMP_RPM",
+      SPEED: 1000,
+      DIR: "FW",
+      ONOFF: "ON",
+      TIME: 300,
+      SEND: false
+    }, null, 2);
+  };
+
   const buttons = [
     { 
       icon: Cpu, 
@@ -333,10 +381,23 @@ export function FunctionButtonPanel({
       info: selectedFirmware,
       disabled: false
     },
+    { 
+      icon: Send, 
+      label: 'JSON 전송', 
+      color: '',
+      gradientStyle: { background: 'linear-gradient(to right, #B45309, #D97706)' },
+      onClick: () => {
+        if (!showJsonPanel && !jsonInput.trim()) {
+          setJsonInput(getJsonTemplate());
+        }
+        setShowJsonPanel(!showJsonPanel);
+      },
+      disabled: false
+    },
   ];
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 h-fit sticky top-8">
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto">
       <div className="space-y-3">
         {buttons.map((button, index) => {
           const Icon = button.icon;
@@ -346,9 +407,10 @@ export function FunctionButtonPanel({
               <button
                 onClick={button.onClick}
                 disabled={button.disabled}
+                style={button.gradientStyle}
                 className={`
                   w-full flex items-center gap-4 px-6 py-4 rounded-xl
-                  bg-gradient-to-r ${button.color}
+                  ${button.color ? `bg-gradient-to-r ${button.color}` : ''}
                   text-white
                   ${isVisuallyDisabled ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]'}
                   transition-all duration-300
@@ -387,6 +449,43 @@ export function FunctionButtonPanel({
                         {num}
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* JSON 전송 입력 패널 */}
+              {index === buttons.length - 1 && showJsonPanel && (
+                <div className="mt-2 bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <textarea
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    placeholder='{"CMD": "TEMP_RPM", ...}'
+                    className="w-full h-48 p-3 text-sm font-mono bg-white border border-slate-300 rounded-lg resize-y focus:outline-none"
+                    spellCheck={false}
+                  />
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleJsonSend}
+                      disabled={isSendingJson}
+                      style={isSendingJson ? undefined : { backgroundColor: '#B45309' }}
+                      className={`flex-1 py-2 px-4 rounded-lg text-white font-medium transition-all
+                        ${isSendingJson ? 'bg-slate-400 cursor-not-allowed' : 'hover:shadow-lg active:scale-[0.98]'}
+                      `}
+                    >
+                      {isSendingJson ? '전송 중...' : '전송'}
+                    </button>
+                    <button
+                      onClick={() => setJsonInput(getJsonTemplate())}
+                      className="py-2 px-4 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-all"
+                    >
+                      템플릿
+                    </button>
+                    <button
+                      onClick={() => setJsonInput('')}
+                      className="py-2 px-4 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-all"
+                    >
+                      초기화
+                    </button>
                   </div>
                 </div>
               )}
@@ -436,6 +535,10 @@ export function FunctionButtonPanel({
           <div className="flex items-center justify-between">
             <span className="text-slate-500">펌웨어 버전</span>
             <span className="text-slate-700">{firmwareVersion}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">프로그램 버전</span>
+            <span className="text-slate-700">{APP_VERSION}</span>
           </div>
           {/* 레시피 남은 시간 표시 */}
           {remainingTime > 0 && (

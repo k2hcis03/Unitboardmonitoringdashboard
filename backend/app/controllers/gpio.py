@@ -1,10 +1,15 @@
 """GPIO control API controller"""
+from typing import Any, Dict
 from litestar import Controller, post
 from litestar.exceptions import NotFoundException
 from app.models.gpio import GPIOControl, MotorControl, GPIOBulkControl
 from app.models.protocol import CommandPacket, ControlValue, CommandPacketGpio, CommandPacketMotor
 from app.services.unit_manager import unit_manager
 from app.services.tcp_bridge import tcp_bridge
+
+import logging
+
+raw_json_logger = logging.getLogger(__name__)
 
 idx = 0
 class GPIOController(Controller):
@@ -157,5 +162,22 @@ class GPIOController(Controller):
             "gpio_states": data.gpio_states,
             "results": results
         }
-        
 
+    @post("/raw-json", summary="Raw JSON 직접 전송")
+    async def send_raw_json(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """사용자가 입력한 JSON을 라즈베리파이로 직접 전송합니다."""
+        raw_json_logger.info(f"Raw JSON send request: {data}")
+        
+        success = await tcp_bridge.send_raw_json(data)
+        
+        if not success:
+            return {
+                "success": False,
+                "error": "라즈베리파이에 연결되어 있지 않습니다."
+            }
+        
+        return {
+            "success": True,
+            "message": "JSON 전송 완료",
+            "sent_data": data
+        }

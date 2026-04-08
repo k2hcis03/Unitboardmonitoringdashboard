@@ -66,14 +66,14 @@ export function StatusMonitoringCard({ selectedUnitId }: StatusMonitoringCardPro
 
   // 센서 데이터 구성
   const sensorData = useMemo(() => [
-    { icon: Thermometer, name: '온도센서1', value: getValue(1100, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서2', value: getValue(1101, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서3', value: getValue(1102, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서4', value: getValue(1103, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서5', value: getValue(1104, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서6', value: getValue(1105, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서7', value: getValue(1106, '0.0'), unit: '°C' },
-    { icon: Thermometer, name: '온도센서8', value: getValue(1107, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그1', value: getValue(1100, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그2', value: getValue(1101, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그3', value: getValue(1102, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그4', value: getValue(1103, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그5', value: getValue(1104, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그6', value: getValue(1105, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그7', value: getValue(1106, '0.0'), unit: '°C' },
+    { icon: Thermometer, name: '아날로그8', value: getValue(1107, '0.0'), unit: '°C' },
     { icon: Droplets, name: 'pH 센서', value: getValue(1800, '0.0'), unit: 'pH' },
     { icon: Wind, name: 'CO₂ 센서', value: getValue(1300, '0.0'), unit: 'ppm' },
     { icon: Gauge, name: '당도 센서', value: getValue(1700, '0.0'), unit: 'Brix' }, 

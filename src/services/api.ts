@@ -235,6 +235,16 @@ class APIClient {
       method: 'POST',
     });
   }
+
+  /**
+   * Raw JSON을 라즈베리파이로 직접 전송
+   */
+  async sendRawJson(jsonData: Record<string, unknown>): Promise<{ success: boolean; error?: string; message?: string }> {
+    return this.request<{ success: boolean; error?: string; message?: string }>('/api/gpio/raw-json', {
+      method: 'POST',
+      body: JSON.stringify(jsonData),
+    });
+  }
 }
 
 export const apiClient = new APIClient();

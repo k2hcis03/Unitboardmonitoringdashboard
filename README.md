@@ -294,6 +294,11 @@ ws://localhost:8000/ws/status
    - CODE `"0"` → 녹색 LED + "정상"
    - CODE `"0"` 외 → 빨간색 LED + "에러: {CODE}"
 
+5. ✅ **Raw JSON 직접 전송**
+   - 사용자가 JSON을 입력하여 라즈베리파이로 직접 전송
+   - 현재 선택된 유닛보드 기준 템플릿 자동 생성
+   - API: `POST /api/gpio/raw-json`
+
 ### 향후 구현 예정
 
 - 레시피 실행 자동화

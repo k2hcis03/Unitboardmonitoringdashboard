@@ -518,6 +518,26 @@ class TCPBridgeService:
                 self._sender_writer = None # Invalidate
                 return False
 
+    async def send_raw_json(self, json_data: dict) -> bool:
+        """
+        Send raw JSON dict directly to the connected Pi without Pydantic validation.
+        """
+        async with self._sender_writer_lock:
+            if self._sender_writer is None:
+                logger.warning("Cannot send raw JSON: No Pi connected on port 7001")
+                return False
+            
+            try:
+                data_str = json.dumps(json_data, ensure_ascii=False)
+                self._sender_writer.write(data_str.encode('utf-8') + b'\n')
+                await self._sender_writer.drain()
+                logger.info(f"Sent raw JSON: {data_str[:200]}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to send raw JSON: {e}")
+                self._sender_writer = None
+                return False
+
 # Global instance
 tcp_bridge = TCPBridgeService()
 

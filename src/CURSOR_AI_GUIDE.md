@@ -476,6 +476,7 @@ websocat ws://localhost:8000/ws/status
 - [x] 프론트엔드 API 클라이언트
 - [x] GPIO 제어 UI 연동
 - [x] 유닛보드 선택 기능
+- [x] Raw JSON 직접 전송 기능 (POST /api/gpio/raw-json)
 
 ### 🚧 향후 구현 예정
 - [ ] 레시피 실행 기능
@@ -517,3 +518,33 @@ class SensorPacket(BaseModel):
 - 현재 선택된 유닛보드의 TANK_ID에 매칭되는 ERROR 항목을 찾음
 - CODE가 `"0"`이면 녹색 LED + "정상" 표시
 - CODE가 `"0"`이 아니면 빨간색 LED + "에러: {CODE}" 표시
+
+---
+
+## 📤 Raw JSON 직접 전송 기능
+
+사용자가 직접 JSON을 입력하여 라즈베리파이로 전송할 수 있는 기능입니다.
+
+### API 엔드포인트
+```http
+POST /api/gpio/raw-json
+Content-Type: application/json
+
+{
+  "UNIT_ID": 601,
+  "IDX": 1,
+  "TANK_ID": "601",
+  "CMD": "TEMP_RPM",
+  "SPEED": 1000,
+  "DIR": "FW",
+  "ONOFF": "ON",
+  "TIME": 300,
+  "SEND": true
+}
+```
+
+### 프론트엔드 UI
+- "JSON 전송" 버튼 클릭 시 입력 패널 표시
+- textarea에 JSON 입력 후 "전송" 버튼으로 전송
+- "템플릿" 버튼: 현재 선택된 유닛보드 기준 기본 JSON 템플릿 생성
+- "초기화" 버튼: 입력 내용 초기화

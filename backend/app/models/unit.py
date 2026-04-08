@@ -14,10 +14,10 @@ class UnitInfo(BaseModel):
 
 class SensorReading(BaseModel):
     """센서 읽기 값"""
-    temperature_1: float = Field(0.0, description="온도센서1 (°C)")
-    temperature_2: float = Field(0.0, description="온도센서2 (°C)")
-    temperature_3: float = Field(0.0, description="온도센서3 (°C)")
-    temperature_4: float = Field(0.0, description="온도센서4 (°C)")
+    temperature_1: float = Field(0.0, description="아날로그1 (°C)")
+    temperature_2: float = Field(0.0, description="아날로그2 (°C)")
+    temperature_3: float = Field(0.0, description="아날로그3 (°C)")
+    temperature_4: float = Field(0.0, description="아날로그4 (°C)")
     ph: float = Field(0.0, description="pH 센서")
     co2: float = Field(0.0, description="CO₂ 센서 (ppm)")
     flow_rate: float = Field(0.0, description="유량 센서 (L/min)")

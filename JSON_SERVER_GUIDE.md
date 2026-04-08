@@ -88,6 +88,33 @@
 
 PC(백엔드)에서 라즈베리파이로 명령을 전송하는 포트입니다.
 
+### Raw JSON 직접 전송
+
+프론트엔드의 "JSON 전송" 버튼을 통해 사용자가 입력한 JSON을 라즈베리파이로 직접 전송할 수 있습니다.
+
+```http
+POST /api/gpio/raw-json
+Content-Type: application/json
+```
+
+**요청 예시:**
+```json
+{
+  "UNIT_ID": 601,
+  "IDX": 1,
+  "TANK_ID": "601",
+  "CMD": "TEMP_RPM",
+  "SPEED": 1000,
+  "DIR": "FW",
+  "ONOFF": "ON",
+  "TIME": 300,
+  "SEND": true
+}
+```
+
+- Pydantic 모델 검증 없이 입력된 JSON을 그대로 TCP 포트 7001로 전달합니다.
+- 라즈베리파이 연결이 없으면 전송 실패를 반환합니다.
+
 ### 상태 수신 (레거시 포맷)
 
 ```json

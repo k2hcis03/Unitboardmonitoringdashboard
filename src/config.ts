@@ -28,6 +28,9 @@ export function getTankIdForUnit(unitIndex: number): number {
   return 101 + unitIndex;
 }
 
+// 프로그램 버전
+export const APP_VERSION = 'v0.81';
+
 // 백엔드 포트 설정 (기본값: 9001)
 const BACKEND_PORT = 9001;
 
