@@ -31,7 +31,7 @@ RECONNECT_DELAY = 5
 
 class TCPBridgeService:
     def __init__(self):
-        # 클라이언트 모드: 단일 연결로 송수신 모두 처리
+        # 포트 7001 송신용 writer (클라이언트로 RPi에 접속)
         self._sender_writer: Optional[asyncio.StreamWriter] = None
         self._sender_writer_lock = asyncio.Lock()
 
@@ -51,11 +51,13 @@ class TCPBridgeService:
         self._tank_states: Dict[int, str] = {tank_id: "None" for tank_id in UNIT_TO_TANK_ID}
 
         # 라즈베리파이 접속 정보 (sys.ini에서 로드)
-        self._rpi_host: str = "172.30.1.100"
-        self._rpi_port: int = 7000
+        self._rpi_host: str = "192.168.100.10"
+        self._rpi_rx_port: int = 7000  # SENSOR/ACK 수신용 (RPi 서버)
+        self._rpi_tx_port: int = 7001  # 명령 송신용 (RPi 서버)
 
         # Tasks
-        self._connect_task: Optional[asyncio.Task] = None
+        self._rx_task: Optional[asyncio.Task] = None  # 포트 7000 수신 루프
+        self._tx_task: Optional[asyncio.Task] = None  # 포트 7001 송신 루프
         self._cleanup_task: Optional[asyncio.Task] = None
         self._running: bool = False
 
@@ -70,9 +72,10 @@ class TCPBridgeService:
         )
         try:
             config.read(ini_path)
-            self._rpi_host = config.get('NETWORK', 'HOST_IP', fallback='172.30.1.100')
-            self._rpi_port = config.getint('NETWORK', 'TCP_PORT', fallback=7000)
-            logger.info(f"RPi 접속 설정: {self._rpi_host}:{self._rpi_port}")
+            self._rpi_host = config.get('NETWORK', 'HOST_IP', fallback='192.168.100.10')
+            self._rpi_rx_port = config.getint('NETWORK', 'TCP_RX_PORT', fallback=7000)
+            self._rpi_tx_port = config.getint('NETWORK', 'TCP_TX_PORT', fallback=7001)
+            logger.info(f"RPi 접속 설정 — RX: {self._rpi_host}:{self._rpi_rx_port}, TX: {self._rpi_host}:{self._rpi_tx_port}")
         except Exception as e:
             logger.error(f"sys.ini 로드 실패, 기본값 사용: {e}")
 
@@ -105,7 +108,7 @@ class TCPBridgeService:
         await ws_manager.broadcast(status)
 
     def get_connection_status(self) -> dict:
-        """현재 연결 상태 반환 (단일 연결이므로 rx=tx)"""
+        """현재 연결 상태 반환"""
         is_connected = self._rx_connected and self._tx_connected
         return {
             "type": "SYSTEM_CONNECTION_STATUS",
@@ -120,44 +123,38 @@ class TCPBridgeService:
     # 시작 / 종료
     # -------------------------------------------------------------------------
     async def start(self):
-        """TCP 클라이언트 시작: 라즈베리파이에 접속하고 자동 재접속 루프 실행"""
+        """TCP 클라이언트 시작: 포트 7000(수신), 7001(송신) 각각 RPi 서버에 접속"""
         logger.info("Starting TCP Bridge Service (Client Mode)...")
 
-        # DB 초기화
         await db_service.init_db()
         await db_service.cleanup_old_data()
 
-        # 주기적 정리 태스크 시작
         self._cleanup_task = asyncio.create_task(self._periodic_cleanup_task())
 
-        # 접속 설정 로드
         self._load_config()
 
-        # 접속 루프 시작
         self._running = True
-        self._connect_task = asyncio.create_task(self._connection_loop())
-        logger.info(f"TCP 클라이언트 시작: {self._rpi_host}:{self._rpi_port} 접속 시도 중...")
+        # 포트 7000: SENSOR/ACK 수신용 접속 루프
+        self._rx_task = asyncio.create_task(self._rx_connection_loop())
+        # 포트 7001: 명령 송신용 접속 루프
+        self._tx_task = asyncio.create_task(self._tx_connection_loop())
+
+        logger.info(f"TCP 클라이언트 시작 — RX: {self._rpi_host}:{self._rpi_rx_port}, TX: {self._rpi_host}:{self._rpi_tx_port}")
 
     async def stop(self):
         """TCP 클라이언트 종료"""
         logger.info("Stopping TCP Bridge Service...")
         self._running = False
 
-        if self._connect_task:
-            self._connect_task.cancel()
-            try:
-                await self._connect_task
-            except asyncio.CancelledError:
-                pass
-            self._connect_task = None
+        for task in (self._rx_task, self._tx_task, self._cleanup_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-            self._cleanup_task = None
+        self._rx_task = self._tx_task = self._cleanup_task = None
 
         async with self._sender_writer_lock:
             if self._sender_writer:
@@ -169,12 +166,10 @@ class TCPBridgeService:
                 self._sender_writer = None
 
     def start_recording(self):
-        """센서 데이터 DB 기록 시작"""
         logger.info("Starting DB recording...")
         self.is_recording = True
 
     def stop_recording(self):
-        """센서 데이터 DB 기록 중지"""
         logger.info("Stopping DB recording...")
         self.is_recording = False
 
@@ -182,52 +177,43 @@ class TCPBridgeService:
         return self.is_recording
 
     # -------------------------------------------------------------------------
-    # 연결 루프 (클라이언트 핵심)
+    # 포트 7000 수신 루프 (클라이언트로 RPi 서버에 접속)
     # -------------------------------------------------------------------------
-    async def _connection_loop(self):
-        """라즈베리파이 서버에 접속하고, 끊기면 자동으로 재접속"""
+    async def _rx_connection_loop(self):
+        """포트 7000: RPi 서버에 클라이언트로 접속하여 SENSOR/ACK 수신"""
         while self._running:
             try:
-                logger.info(f"라즈베리파이 접속 시도: {self._rpi_host}:{self._rpi_port}")
-                reader, writer = await asyncio.open_connection(self._rpi_host, self._rpi_port)
+                logger.info(f"[RX] 접속 시도: {self._rpi_host}:{self._rpi_rx_port}")
+                reader, writer = await asyncio.open_connection(self._rpi_host, self._rpi_rx_port)
 
-                # 연결 성공 → 상태 업데이트
-                async with self._sender_writer_lock:
-                    self._sender_writer = writer
                 self._rx_connected = True
-                self._tx_connected = True
                 await self._broadcast_connection_status()
-                logger.info(f"라즈베리파이 연결 성공: {self._rpi_host}:{self._rpi_port}")
+                logger.info(f"[RX] 연결 성공: {self._rpi_host}:{self._rpi_rx_port}")
 
-                # 수신 루프 (연결이 끊길 때까지 블록)
                 await self._receive_loop(reader, writer)
 
             except (ConnectionRefusedError, OSError) as e:
-                logger.warning(f"라즈베리파이 접속 실패: {e}")
+                logger.warning(f"[RX] 접속 실패: {e}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"연결 오류: {e}")
+                logger.error(f"[RX] 연결 오류: {e}")
             finally:
-                # 연결 해제 처리
                 self._rx_connected = False
-                self._tx_connected = False
-                async with self._sender_writer_lock:
-                    self._sender_writer = None
                 await self._broadcast_connection_status()
 
             if self._running:
-                logger.info(f"{RECONNECT_DELAY}초 후 재접속 시도...")
+                logger.info(f"[RX] {RECONNECT_DELAY}초 후 재접속...")
                 await asyncio.sleep(RECONNECT_DELAY)
 
     async def _receive_loop(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        """연결된 소켓에서 데이터를 수신하고 메시지를 처리"""
+        """수신된 데이터를 읽고 메시지 처리"""
         buffer = b""
         try:
             while True:
                 data = await reader.read(4096)
                 if not data:
-                    logger.info("라즈베리파이 연결 종료 (EOF)")
+                    logger.info("[RX] 연결 종료 (EOF)")
                     break
 
                 buffer += data
@@ -241,21 +227,65 @@ class TCPBridgeService:
                         await self.process_message(msg)
                     buffer = b""
                 except UnicodeDecodeError:
-                    pass  # 더 많은 데이터 대기
+                    pass
                 except Exception as e:
-                    logger.error(f"스트림 처리 오류: {e}")
+                    logger.error(f"[RX] 스트림 처리 오류: {e}")
                     buffer = b""
 
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.error(f"수신 루프 오류: {e}")
+            logger.error(f"[RX] 수신 루프 오류: {e}")
         finally:
             try:
                 writer.close()
                 await writer.wait_closed()
             except Exception:
                 pass
+
+    # -------------------------------------------------------------------------
+    # 포트 7001 송신 루프 (클라이언트로 RPi 서버에 접속)
+    # -------------------------------------------------------------------------
+    async def _tx_connection_loop(self):
+        """포트 7001: RPi 서버에 클라이언트로 접속하여 명령 송신 연결 유지"""
+        while self._running:
+            try:
+                logger.info(f"[TX] 접속 시도: {self._rpi_host}:{self._rpi_tx_port}")
+                reader, writer = await asyncio.open_connection(self._rpi_host, self._rpi_tx_port)
+
+                async with self._sender_writer_lock:
+                    self._sender_writer = writer
+                self._tx_connected = True
+                await self._broadcast_connection_status()
+                logger.info(f"[TX] 연결 성공: {self._rpi_host}:{self._rpi_tx_port}")
+
+                # 연결 유지 (상대방이 닫을 때까지 대기)
+                while True:
+                    data = await reader.read(1024)
+                    if not data:
+                        logger.info("[TX] 연결 종료 (EOF)")
+                        break
+
+            except (ConnectionRefusedError, OSError) as e:
+                logger.warning(f"[TX] 접속 실패: {e}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[TX] 연결 오류: {e}")
+            finally:
+                self._tx_connected = False
+                async with self._sender_writer_lock:
+                    self._sender_writer = None
+                await self._broadcast_connection_status()
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+
+            if self._running:
+                logger.info(f"[TX] {RECONNECT_DELAY}초 후 재접속...")
+                await asyncio.sleep(RECONNECT_DELAY)
 
     # -------------------------------------------------------------------------
     # 주기적 DB 정리
@@ -355,10 +385,10 @@ class TCPBridgeService:
     # 명령 전송 (변경 없음 - _sender_writer 재사용)
     # -------------------------------------------------------------------------
     async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketRef]):
-        """Pydantic 패킷을 JSON으로 직렬화하여 라즈베리파이에 전송"""
+        """Pydantic 패킷을 JSON으로 직렬화하여 라즈베리파이에 전송 (포트 7001)"""
         async with self._sender_writer_lock:
             if self._sender_writer is None:
-                logger.warning("Cannot send command: 라즈베리파이에 연결되어 있지 않습니다")
+                logger.warning("Cannot send command: 라즈베리파이 TX(7001)에 연결되어 있지 않습니다")
                 return False
 
             try:
@@ -373,10 +403,10 @@ class TCPBridgeService:
                 return False
 
     async def send_raw_json(self, json_data: dict) -> bool:
-        """Pydantic 검증 없이 raw JSON을 라즈베리파이에 직접 전송"""
+        """Pydantic 검증 없이 raw JSON을 라즈베리파이에 직접 전송 (포트 7001)"""
         async with self._sender_writer_lock:
             if self._sender_writer is None:
-                logger.warning("Cannot send raw JSON: 라즈베리파이에 연결되어 있지 않습니다")
+                logger.warning("Cannot send raw JSON: 라즈베리파이 TX(7001)에 연결되어 있지 않습니다")
                 return False
 
             try:
@@ -402,7 +432,7 @@ class TCPBridgeService:
 
         try:
             config.read(ini_path)
-            url = config.get('FIRMWARE_UPDATE', 'URL', fallback="http://172.30.1.100:9001/upload")
+            url = config.get('FIRMWARE_UPDATE', 'URL', fallback="http://192.168.100.10:9001/upload")
 
             if os.name == 'nt':
                 default_dir = "C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/"
@@ -413,7 +443,7 @@ class TCPBridgeService:
 
         except Exception as e:
             logger.error(f"Failed to load config from {ini_path}: {e}")
-            url = "http://172.30.1.100:9001/upload"
+            url = "http://192.168.100.10:9001/upload"
             firmware_dir = "C:/Projects/M-FACTORY/Software/control_server/Unitboardmonitoringdashboard/firmware/" \
                 if os.name == 'nt' else "/home/pi/Projects/cosmo-m/firmware/"
 
