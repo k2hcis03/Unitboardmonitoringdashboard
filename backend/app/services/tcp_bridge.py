@@ -83,7 +83,7 @@ class TCPBridgeService:
         # Consider connected if both RX (7000) and TX (7001) are active
         # Or at least one is active? Requirement says "7000, 7001 connected"
         # We will return detailed status and a summary 'connected' flag.
-        is_connected = self._rx_connected and self._tx_connected
+        is_connected = self._rx_connected or self._tx_connected
         return {
             "type": "SYSTEM_CONNECTION_STATUS",
             "data": {
