@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "session-report@claude-plugins-official": true,
+    "serena@claude-plugins-official": true
+  }
+}
