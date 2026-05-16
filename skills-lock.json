@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "deep-interview": {
+      "source": "devbrother2024/skills",
+      "sourceType": "github",
+      "skillPath": "deep-interview/SKILL.md",
+      "computedHash": "2fb58ed1a92d6cfd98e382d428ec8a0905e1956fd2d8ec7cbd3fa8c516e3251f"
+    }
+  }
+}

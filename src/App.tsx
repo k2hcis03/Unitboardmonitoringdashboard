@@ -7,10 +7,24 @@ import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { getTankIdForUnit } from './config';
 import { apiClient } from './services/api';
 
+interface UnitControlState {
+  gpioStates: boolean[];
+  motorOn: boolean;
+  motorSpeed: number;
+  motorTime: number;
+}
+
+const DEFAULT_UNIT_STATE: UnitControlState = {
+  gpioStates: Array(8).fill(false),
+  motorOn: false,
+  motorSpeed: 0,
+  motorTime: 0,
+};
+
 export default function App() {
   // 유닛보드 ID (기본값: 0)
   const [selectedUnitId, setSelectedUnitId] = useState<number>(0);
-  
+
   // View Mode: 'control' or 'dashboard'
   const [viewMode, setViewMode] = useState<'control' | 'dashboard'>('control');
 
@@ -19,29 +33,63 @@ export default function App() {
     Array(8).fill(true)
   );
 
-  // GPIO 제어 패널용 독립적인 상태
-  const [gpioStates, setGpioStates] = useState<boolean[]>(
-    Array(8).fill(false)
-  );
-  const [motorOn, setMotorOn] = useState(false);
-  const [motorSpeed, setMotorSpeed] = useState(0); // RPM 단위로 변경
-  const [motorTime, setMotorTime] = useState(0); // s 단위
+  // 유닛별 GPIO/모터 상태 캐시: { [unitId]: UnitControlState }
+  const [unitStates, setUnitStates] = useState<Record<number, UnitControlState>>({});
+
   const [zoomLevel, setZoomLevel] = useState(100);
+
+  // 현재 선택된 유닛의 상태 (캐시에 없으면 기본값)
+  const currentState: UnitControlState = unitStates[selectedUnitId] ?? DEFAULT_UNIT_STATE;
+  const { gpioStates, motorOn, motorSpeed, motorTime } = currentState;
+
+  // 현재 유닛 상태 업데이트 헬퍼
+  const updateCurrentUnit = (updates: Partial<UnitControlState>) => {
+    setUnitStates(prev => ({
+      ...prev,
+      [selectedUnitId]: { ...(prev[selectedUnitId] ?? DEFAULT_UNIT_STATE), ...updates },
+    }));
+  };
+
+  // 유닛 변경 시: 캐시에 없으면 기본값으로 초기화하고 백엔드에서 실제 상태 조회
+  useEffect(() => {
+    const unitId = selectedUnitId;
+
+    setUnitStates(prev => {
+      if (prev[unitId] !== undefined) {
+        return prev; // 이미 캐시된 상태 — 그대로 복원
+      }
+
+      // 첫 방문: 기본값으로 초기화하고 비동기로 백엔드 조회
+      apiClient.getGPIOState(unitId)
+        .then(data => {
+          if (Array.isArray(data.gpio_states) && data.gpio_states.length === 8) {
+            setUnitStates(current => ({
+              ...current,
+              [unitId]: {
+                ...(current[unitId] ?? DEFAULT_UNIT_STATE),
+                gpioStates: data.gpio_states,
+              },
+            }));
+          }
+        })
+        .catch(() => {});
+
+      return { ...prev, [unitId]: { ...DEFAULT_UNIT_STATE } };
+    });
+  }, [selectedUnitId]);
 
   const toggleGPIO = async (index: number) => {
     const newStates = [...gpioStates];
     newStates[index] = !newStates[index];
-    setGpioStates(newStates);
-    
-    // GPIO 변경 시 모든 GPIO 상태를 JSON으로 백엔드로 전송
-    // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
+    updateCurrentUnit({ gpioStates: newStates });
+
     const mappedUnitId = getTankIdForUnit(selectedUnitId);
     try {
       await apiClient.controlGPIOBulk({
         unit_id: mappedUnitId,
         gpio_states: newStates,
       });
-      
+
       console.log('GPIO 상태가 백엔드로 전송되었습니다:', {
         unit_id: mappedUnitId,
         gpio_states: newStates,
@@ -49,45 +97,26 @@ export default function App() {
     } catch (error) {
       console.error('GPIO 제어 실패:', error);
       // 에러 발생 시 이전 상태로 복원
-      setGpioStates([...gpioStates]);
+      updateCurrentUnit({ gpioStates });
     }
   };
 
   // 모터 속도/시간 변경은 UI 상태만 업데이트 (ON/OFF 토글 시에만 백엔드로 전송)
   const handleMotorSpeedChange = (speed: number) => {
-    setMotorSpeed(speed);
+    updateCurrentUnit({ motorSpeed: speed });
   };
 
   const handleMotorTimeChange = (time: number) => {
-    setMotorTime(time);
+    updateCurrentUnit({ motorTime: time });
   };
 
-  // 초기 로드 시 유닛 1(index 0)에 대한 펌웨어 버전 요청
-  useEffect(() => {
-    // 백엔드에 초기 유닛 선택 이벤트를 전송하여 펌웨어 버전 정보를 요청하도록 함
-    // FunctionButtonPanel에서도 WebSocket을 통해 UNIT_SELECT를 보내지만,
-    // 여기서 명시적으로 한 번 더 보내거나, 백엔드가 연결 시점에 기본값으로 처리하도록 유도
-    // WebSocket 연결이 수립된 후 보내야 하므로 약간의 지연을 주거나,
-    // WebSocketContext에서 연결 상태를 가져와서 처리하는 것이 좋음.
-    // 하지만 여기서는 간단하게 타임아웃으로 처리하거나, 
-    // FunctionButtonPanel 내부에서 처리하도록 하는 것이 나을 수 있음.
-    // 사용자의 요청: "프론트엔드가 처음 실행 될 때... set_selected_unit_id(self, unit_id: int):함수가 한번 호출되어서"
-    
-    // 이 부분은 FunctionButtonPanel 컴포넌트 내부에서 처리하는 것이 더 적절할 수 있음.
-    // App.tsx는 전체 레이아웃을 담당하므로.
-  }, []);
-
   const handleMotorToggle = async (isOn: boolean) => {
-    setMotorOn(isOn);
-    
-    // OFF 시 시간을 0으로 초기화
     const sendTime = isOn ? motorTime : 0;
-    if (!isOn) {
-      setMotorTime(0);
-    }
-    
-    // 모터 ON/OFF 토글 시 백엔드로 전송
-    // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
+    updateCurrentUnit({
+      motorOn: isOn,
+      ...(isOn ? {} : { motorTime: 0 }),
+    });
+
     const mappedUnitId = getTankIdForUnit(selectedUnitId);
     try {
       await apiClient.controlMotor({
@@ -96,7 +125,7 @@ export default function App() {
         speed: motorSpeed,
         time: sendTime,
       });
-      
+
       console.log('모터 상태가 백엔드로 전송되었습니다:', {
         unit_id: mappedUnitId,
         is_on: isOn,
@@ -106,7 +135,7 @@ export default function App() {
     } catch (error) {
       console.error('모터 제어 실패:', error);
       // 에러 발생 시 이전 상태로 복원
-      setMotorOn(!isOn);
+      updateCurrentUnit({ motorOn: !isOn });
     }
   };
 
@@ -120,7 +149,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
-      <div 
+      <div
         className="max-w-[1440px] mx-auto transition-transform duration-300"
         style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
       >
@@ -130,7 +159,7 @@ export default function App() {
             <h1 className="text-[#0A4D68]">유닛보드 상태 모니터링 & 제어 시스템</h1>
             <p className="text-slate-600 mt-2">Industrial Brewing & Fermentation Equipment Dashboard</p>
           </div>
-          
+
           {/* Zoom Controls */}
           <div className="flex items-center gap-2 bg-white rounded-xl shadow-md border border-slate-200 p-2">
             <button
@@ -141,7 +170,7 @@ export default function App() {
             >
               <ZoomOut className="w-5 h-5 text-[#0A4D68]" />
             </button>
-            
+
             <button
               onClick={resetZoom}
               className="px-3 py-2 hover:bg-slate-100 rounded-lg transition-colors min-w-[60px]"
@@ -149,7 +178,7 @@ export default function App() {
             >
               <span className="text-[#0A4D68] tabular-nums">{zoomLevel}%</span>
             </button>
-            
+
             <button
               onClick={() => adjustZoom(10)}
               disabled={zoomLevel >= 150}
@@ -158,9 +187,9 @@ export default function App() {
             >
               <ZoomIn className="w-5 h-5 text-[#0A4D68]" />
             </button>
-            
+
             <div className="w-px h-6 bg-slate-300 mx-1"></div>
-            
+
             <button
               onClick={resetZoom}
               className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
@@ -180,7 +209,7 @@ export default function App() {
                 {/* Status Monitoring Card - 독립적인 상태 표시 */}
                 <StatusMonitoringCard selectedUnitId={selectedUnitId} />
 
-                {/* GPIO & Motor Control Panel - 독립적인 제어 */}
+                {/* GPIO & Motor Control Panel - 유닛별 상태 복원 */}
                 <GPIOControlPanel
                   gpioStates={gpioStates}
                   toggleGPIO={toggleGPIO}
@@ -193,8 +222,8 @@ export default function App() {
                 />
               </>
             ) : (
-              <DashboardPanel 
-                selectedUnitId={selectedUnitId} 
+              <DashboardPanel
+                selectedUnitId={selectedUnitId}
                 tempSelection={dashboardTempSelection}
                 onTempSelectionChange={setDashboardTempSelection}
               />
@@ -202,7 +231,7 @@ export default function App() {
           </div>
 
           {/* Right Column - Function Buttons */}
-          <FunctionButtonPanel 
+          <FunctionButtonPanel
             selectedUnitId={selectedUnitId}
             onUnitIdChange={setSelectedUnitId}
             viewMode={viewMode}
