@@ -10,6 +10,7 @@ interface GPIOControlPanelProps {
   setMotorSpeed: (value: number) => void;
   motorTime: number;
   setMotorTime: (value: number) => void;
+  onAnalogCalibrate: (channel: number, current: number, flash: number) => void;
 }
 
 export function GPIOControlPanel({
@@ -21,9 +22,11 @@ export function GPIOControlPanel({
   setMotorSpeed,
   motorTime,
   setMotorTime,
+  onAnalogCalibrate,
 }: GPIOControlPanelProps) {
   const [showSpeedControl, setShowSpeedControl] = useState(false);
   const [showTimeControl, setShowTimeControl] = useState(false);
+  const [analogChannel, setAnalogChannel] = useState(1);
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
@@ -102,7 +105,7 @@ export function GPIOControlPanel({
       </div>
 
       {/* Motor Controls */}
-      <div className="space-y-4">
+      <div className="space-y-4 pb-8 mb-8 border-b border-slate-200">
         {/* Motor Speed Control */}
         <div className="flex items-center justify-between">
           <span className="text-slate-700">MOTOR Speed</span>
@@ -190,8 +193,8 @@ export function GPIOControlPanel({
             onClick={() => setMotorOn(!motorOn)}
             className={`
               relative w-16 h-9 rounded-full transition-all duration-300 shadow-inner
-              ${motorOn 
-                ? 'bg-gradient-to-r from-[#0A4D68] to-[#0A84FF]' 
+              ${motorOn
+                ? 'bg-gradient-to-r from-[#0A4D68] to-[#0A84FF]'
                 : 'bg-slate-300'
               }
               hover:shadow-lg
@@ -209,6 +212,53 @@ export function GPIOControlPanel({
             `}>
               <Power className="w-4 h-4" />
             </span>
+          </button>
+        </div>
+      </div>
+
+      {/* ANALOG Cal. */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-1 h-6 bg-gradient-to-b from-[#0A4D68] to-[#0A84FF] rounded-full"></div>
+          <span className="text-[#0A4D68] font-medium">ANALOG Cal.</span>
+        </div>
+
+        {/* 채널 선택 */}
+        <div className="flex items-center justify-between">
+          <span className="text-slate-700">Channel</span>
+          <select
+            value={analogChannel}
+            onChange={(e) => setAnalogChannel(parseInt(e.target.value))}
+            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-[#0A84FF] transition-all"
+          >
+            {Array.from({ length: 8 }, (_, i) => i + 1).map((ch) => (
+              <option key={ch} value={ch}>CH {ch}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 캘리브레이션 버튼 */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onAnalogCalibrate(analogChannel, 4, 0)}
+            className="flex-1 py-2 px-3 rounded-lg text-white hover:shadow-lg active:scale-[0.98] transition-all duration-300"
+            style={{ background: 'linear-gradient(to right, #0A4D68, #0A84FF)' }}
+          >
+            4mA
+          </button>
+          <button
+            onClick={() => onAnalogCalibrate(analogChannel, 20, 0)}
+            className="flex-1 py-2 px-3 rounded-lg text-white hover:shadow-lg active:scale-[0.98] transition-all duration-300"
+            style={{ background: 'linear-gradient(to right, #0A4D68, #0A84FF)' }}
+          >
+            20mA
+          </button>
+          <button
+            onClick={() => onAnalogCalibrate(analogChannel, 0, 1)}
+            className="flex-1 py-2 px-3 rounded-lg text-white hover:shadow-lg active:scale-[0.98] transition-all duration-300"
+            style={{ background: 'linear-gradient(to right, #B45309, #D97706)' }}
+          >
+            FLASH
           </button>
         </div>
       </div>

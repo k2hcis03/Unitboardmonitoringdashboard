@@ -139,6 +139,30 @@ export default function App() {
     }
   };
 
+  const handleAnalogCalibrate = async (channel: number, current: number, flash: number) => {
+    const mappedUnitId = getTankIdForUnit(selectedUnitId);
+    const payload = {
+      UNIT_ID: String(mappedUnitId),
+      IDX: 1,
+      TANK_ID: String(mappedUnitId),
+      CMD: 'ADC_CAL',
+      CHANNEL: channel,
+      CURRENT: current,
+      FLASH: flash,
+      SEND: false
+    };
+    try {
+      const result = await apiClient.sendRawJson(payload);
+      if (result.success) {
+        console.log('[ADC_CAL] 전송 성공');
+      } else {
+        console.error('[ADC_CAL] 전송 실패 (Pi 미연결):', result.error);
+      }
+    } catch (error) {
+      console.error('[ADC_CAL] 요청 오류:', error);
+    }
+  };
+
   const adjustZoom = (delta: number) => {
     setZoomLevel(prev => Math.min(Math.max(prev + delta, 75), 150));
   };
@@ -219,6 +243,7 @@ export default function App() {
                   setMotorSpeed={handleMotorSpeedChange}
                   motorTime={motorTime}
                   setMotorTime={handleMotorTimeChange}
+                  onAnalogCalibrate={handleAnalogCalibrate}
                 />
               </>
             ) : (
