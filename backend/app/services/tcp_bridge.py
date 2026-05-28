@@ -7,7 +7,7 @@ import os
 from typing import Optional, Dict, List, Union
 from pydantic import ValidationError
 
-from app.models.protocol import SensorPacket, AckPacket, AckPacketInitialize, CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketGetVersion, CommandPacketRef, RecipeDataItem, CommandPacketState, StateDataItem
+from app.models.protocol import SensorPacket, AckPacket, AckPacketInitialize, CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketGetVersion, CommandPacketRef, RecipeDataItem, CommandPacketState, StateDataItem, PingPacket
 from app.services.websocket_service import ws_manager
 from app.services.db_service import db_service
 
@@ -40,6 +40,9 @@ class TCPBridgeService:
         
         # Command index counter
         self._command_idx = 0
+
+        # PING IDX 카운터 (0~99,999 순환)
+        self._ping_idx: int = 0
         
         # 현재 선택된 유닛보드 ID (프론트엔드 매핑된 TANK_ID, 기본값: 601 = 유닛보드 1)
         self._selected_unit_id: int = 601
@@ -339,6 +342,8 @@ class TCPBridgeService:
                     pass
             self._sender_writer = writer
 
+        ping_task = asyncio.create_task(self._ping_loop())
+
         # Keep connection alive
         try:
             # We just listen for closure here, or maybe heartbeats from Pi?
@@ -350,6 +355,11 @@ class TCPBridgeService:
         except Exception as e:
             logger.error(f"Sender connection loop error: {e}")
         finally:
+            ping_task.cancel()
+            try:
+                await ping_task
+            except asyncio.CancelledError:
+                pass
             logger.info("Sender connection lost")
             self._tx_connected = False
             await self._broadcast_connection_status()
@@ -358,6 +368,18 @@ class TCPBridgeService:
                     self._sender_writer = None
             writer.close()
             await writer.wait_closed()
+
+    async def _ping_loop(self):
+        """포트 7001 연결 동안 1초마다 PING 패킷 전송. IDX는 0~99,999 순환."""
+        logger.info("PING 루프 시작 (1초 간격)")
+        while True:
+            packet = PingPacket.model_validate({"CMD": "PING", "IDX": str(self._ping_idx), "NOTE": "OK"})
+            sent = await self.send_command(packet)
+            if not sent:
+                logger.warning("PING 전송 실패 — 루프 종료")
+                break
+            self._ping_idx = (self._ping_idx + 1) % 100000
+            await asyncio.sleep(1)
 
     async def send_firmware_update(self, unit_id: int, file_path: str) -> bool:
         """
@@ -497,7 +519,7 @@ class TCPBridgeService:
             logger.error(f"Failed to send state command: {e}")
             return False
 
-    async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketRef]):
+    async def send_command(self, packet: Union[CommandPacket, CommandPacketGpio, CommandPacketMotor, CommandPacketFirmware, CommandPacketRef, PingPacket]):
         """
         Public method to send JSON command to the connected Pi.
         """
@@ -505,13 +527,16 @@ class TCPBridgeService:
             if self._sender_writer is None:
                 logger.warning("Cannot send command: No Pi connected on port 7001")
                 return False
-            
+
             try:
                 # Serialize
                 data_str = packet.model_dump_json(by_alias=True)
                 self._sender_writer.write(data_str.encode('utf-8') + b'\n')
                 await self._sender_writer.drain()
-                logger.info(f"Sent command: {packet.cmd}")
+                if packet.cmd == "PING":
+                    logger.debug(f"Sent command: {packet.cmd}")
+                else:
+                    logger.info(f"Sent command: {packet.cmd}")
                 return True
             except Exception as e:
                 logger.error(f"Failed to send command: {e}")
