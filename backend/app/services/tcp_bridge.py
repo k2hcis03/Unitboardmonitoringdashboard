@@ -34,6 +34,9 @@ class TCPBridgeService:
         
         self._rx_connected = False
         self._tx_connected = False
+
+        # 현재 활성 수신 연결 추적 (재연결 시 이전 핸들러가 상태를 덮어쓰는 것을 방지)
+        self._receiver_writer: Optional[asyncio.StreamWriter] = None
         
         # Recording status
         self.is_recording = False
@@ -186,6 +189,7 @@ class TCPBridgeService:
     async def handle_receiver_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info('peername')
         logger.info(f"Receiver (7000) connected by {addr}")
+        self._receiver_writer = writer
         self._rx_connected = True
         await self._broadcast_connection_status()
 
@@ -230,7 +234,10 @@ class TCPBridgeService:
             logger.error(f"Receiver connection error: {e}")
         finally:
             logger.info(f"Receiver (7000) disconnected {addr}")
-            self._rx_connected = False
+            # 이 연결이 현재 활성 연결인 경우에만 상태를 변경 (재연결 시 경쟁 조건 방지)
+            if self._receiver_writer == writer:
+                self._receiver_writer = None
+                self._rx_connected = False
             await self._broadcast_connection_status()
             writer.close()
             await writer.wait_closed()
@@ -361,11 +368,12 @@ class TCPBridgeService:
             except asyncio.CancelledError:
                 pass
             logger.info("Sender connection lost")
-            self._tx_connected = False
-            await self._broadcast_connection_status()
+            # 이 연결이 현재 활성 연결인 경우에만 상태를 변경 (재연결 시 경쟁 조건 방지)
             async with self._sender_writer_lock:
                 if self._sender_writer == writer:
                     self._sender_writer = None
+                    self._tx_connected = False
+            await self._broadcast_connection_status()
             writer.close()
             await writer.wait_closed()
 
