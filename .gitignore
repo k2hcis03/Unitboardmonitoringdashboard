@@ -58,3 +58,5 @@ htmlcov/
 # CAN bus (if needed)
 *.db
 
+backend/*.csv
+firmware/firmware.bin

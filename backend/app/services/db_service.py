@@ -82,6 +82,33 @@ class DBService:
             
             await db.commit()
 
+    async def clear_all(self) -> bool:
+        """모든 기록 데이터(packets/readings/states)를 삭제하고 DB를 비운다."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys = ON;")
+                # packets 삭제 시 CASCADE로 readings/states도 삭제되지만 명시적으로 모두 비운다.
+                await db.execute("DELETE FROM readings")
+                await db.execute("DELETE FROM states")
+                await db.execute("DELETE FROM packets")
+                # AUTOINCREMENT 시퀀스 초기화 (sqlite_sequence 테이블이 존재할 때만)
+                async with db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'"
+                ) as cursor:
+                    seq_exists = await cursor.fetchone()
+                if seq_exists:
+                    await db.execute(
+                        "DELETE FROM sqlite_sequence WHERE name IN ('packets', 'readings', 'states')"
+                    )
+                await db.commit()
+                # VACUUM은 트랜잭션 밖에서 실행해야 하므로 commit 후 호출
+                await db.execute("VACUUM")
+            logger.info("Database cleared (all packets/readings/states removed)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to clear database: {e}")
+            return False
+
     async def save_packet(self, order_num: int, created_at: str, readings: List[Dict], states: List[Dict]):
         """Save a complete packet with its readings and states transactionally."""
         try:

@@ -4,6 +4,7 @@ import logging
 import requests
 import configparser
 import os
+from datetime import datetime
 from typing import Optional, Dict, List, Union
 from pydantic import ValidationError
 
@@ -280,8 +281,9 @@ class TCPBridgeService:
             
             # Save to DB if recording
             if self.is_recording:
-                # Construct timestamp YYYY-MM-DD HH:MM:SS
-                created_at = f"{packet.date} {packet.time}"
+                # 저장 시각은 라즈베리파이가 보낸 패킷의 DATE/TIME이 아니라
+                # 백엔드(PC)의 현재 시각을 사용한다. (Pi 시계 오차와 무관하게 정확한 시간 기록)
+                created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
                 # Convert models to dicts for DB service
                 readings = [r.model_dump(by_alias=True) for r in packet.values]

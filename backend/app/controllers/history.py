@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class RecordingStartRequest(BaseModel):
     recipe_id: Optional[str] = None
+    reset_db: bool = False
 
 class HistoryController(Controller):
     path = ""
@@ -24,11 +25,21 @@ class HistoryController(Controller):
     async def start_recording(self, data: Optional[RecordingStartRequest] = None) -> dict:
         """Start DB recording and send STATE Run command."""
         recipe_id = data.recipe_id if data else None
-        logger.info(f"Starting recording. Recipe ID: {recipe_id}")
+        reset_db = data.reset_db if data else False
+        logger.info(f"Starting recording. Recipe ID: {recipe_id}, reset_db: {reset_db}")
+        # reset_db가 True면 녹화 시작 전에 DB 전체를 비운다.
+        db_cleared = False
+        if reset_db:
+            db_cleared = await db_service.clear_all()
         tcp_bridge.start_recording()
         # Send STATE "Run" command
         await tcp_bridge.send_state_command("Run")
-        return {"status": "started", "is_recording": True, "recipe_id": recipe_id}
+        return {
+            "status": "started",
+            "is_recording": True,
+            "recipe_id": recipe_id,
+            "db_cleared": db_cleared,
+        }
 
     @post(path="/recording/pause")
     async def pause_recording(self) -> dict:

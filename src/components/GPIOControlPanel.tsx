@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Power, Gauge, Clock } from 'lucide-react';
 
 interface GPIOControlPanelProps {
@@ -27,6 +27,14 @@ export function GPIOControlPanel({
   const [showSpeedControl, setShowSpeedControl] = useState(false);
   const [showTimeControl, setShowTimeControl] = useState(false);
   const [analogChannel, setAnalogChannel] = useState(1);
+  const analogChannelRef = useRef<HTMLSelectElement>(null);
+
+  // 캘리브레이션 버튼 클릭 시점에 콤보박스의 실제 값을 항상 직접 읽어온다.
+  const getSelectedChannel = (): number => {
+    const raw = analogChannelRef.current?.value;
+    const parsed = raw != null ? parseInt(raw, 10) : NaN;
+    return Number.isNaN(parsed) ? analogChannel : parsed;
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
@@ -227,6 +235,7 @@ export function GPIOControlPanel({
         <div className="flex items-center justify-between">
           <span className="text-slate-700">Channel</span>
           <select
+            ref={analogChannelRef}
             value={analogChannel}
             onChange={(e) => setAnalogChannel(parseInt(e.target.value))}
             className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-[#0A84FF] transition-all"
@@ -240,21 +249,21 @@ export function GPIOControlPanel({
         {/* 캘리브레이션 버튼 */}
         <div className="flex gap-2">
           <button
-            onClick={() => onAnalogCalibrate(analogChannel, 4, 0)}
+            onClick={() => onAnalogCalibrate(getSelectedChannel(), 4, 0)}
             className="flex-1 py-2 px-3 rounded-lg text-white hover:shadow-lg active:scale-[0.98] transition-all duration-300"
             style={{ background: 'linear-gradient(to right, #0A4D68, #0A84FF)' }}
           >
             4mA
           </button>
           <button
-            onClick={() => onAnalogCalibrate(analogChannel, 20, 0)}
+            onClick={() => onAnalogCalibrate(getSelectedChannel(), 20, 0)}
             className="flex-1 py-2 px-3 rounded-lg text-white hover:shadow-lg active:scale-[0.98] transition-all duration-300"
             style={{ background: 'linear-gradient(to right, #0A4D68, #0A84FF)' }}
           >
             20mA
           </button>
           <button
-            onClick={() => onAnalogCalibrate(analogChannel, 0, 1)}
+            onClick={() => onAnalogCalibrate(getSelectedChannel(), 0, 1)}
             className="flex-1 py-2 px-3 rounded-lg text-white hover:shadow-lg active:scale-[0.98] transition-all duration-300"
             style={{ background: 'linear-gradient(to right, #B45309, #D97706)' }}
           >

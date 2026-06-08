@@ -166,9 +166,10 @@ class APIClient {
   /**
    * DB 기록 시작 (STATE "Run" 전송)
    */
-  async startRecording(): Promise<{ status: string, is_recording: boolean }> {
-    return this.request<{ status: string, is_recording: boolean }>('/api/recording/start', {
+  async startRecording(resetDb: boolean = false): Promise<{ status: string, is_recording: boolean, db_cleared?: boolean }> {
+    return this.request<{ status: string, is_recording: boolean, db_cleared?: boolean }>('/api/recording/start', {
       method: 'POST',
+      body: JSON.stringify({ reset_db: resetDb }),
     });
   }
 

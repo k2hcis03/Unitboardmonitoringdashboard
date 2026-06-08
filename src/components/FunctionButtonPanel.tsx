@@ -1,5 +1,6 @@
 import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2, Clock, Send } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getTankIdForUnit, APP_VERSION } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -34,6 +35,10 @@ export function FunctionButtonPanel({
   const [isPiConnected, setIsPiConnected] = useState(false);
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
   const [isRecording, setIsRecording] = useState(false);
+  // 레시피 세션이 진행 중인지 추적 (일시정지 상태도 포함). 처음 시작과 재시작을 구분하는 용도.
+  const [recipeSessionActive, setRecipeSessionActive] = useState(false);
+  // DB 초기화 선택 다이얼로그 표시 여부
+  const [showStartDialog, setShowStartDialog] = useState(false);
   const [errorCode, setErrorCode] = useState<string>('0');
   const [showJsonPanel, setShowJsonPanel] = useState(false);
   const [jsonInput, setJsonInput] = useState<string>('');
@@ -237,21 +242,40 @@ export function FunctionButtonPanel({
       return;
     }
 
+    // 일시정지 후 재시작이면 묻지 않고 기존 DB에 이어서 저장
+    if (recipeSessionActive) {
+      await runStartRecording(false);
+      return;
+    }
+
+    // 처음 시작이면 DB 초기화 여부를 묻는 다이얼로그 표시
+    setShowStartDialog(true);
+  };
+
+  // 실제 녹화 시작 요청. resetDb가 true면 백엔드에서 DB를 비우고 시작한다.
+  const runStartRecording = async (resetDb: boolean) => {
     try {
-      console.log('Starting recording...');
-      const response = await apiClient.startRecording();
+      console.log(`Starting recording... (resetDb=${resetDb})`);
+      const response = await apiClient.startRecording(resetDb);
       if (response.is_recording) {
         setIsRecording(true);
+        setRecipeSessionActive(true);
         // 타이머 시작
         if (remainingTime > 0) {
           setIsTimerRunning(true);
         }
-        console.log('Recording started');
+        console.log(`Recording started (db_cleared=${response.db_cleared ?? false})`);
       }
     } catch (error) {
       console.error('Failed to start recording:', error);
       alert('녹화 시작에 실패했습니다.');
     }
+  };
+
+  // 다이얼로그 선택 처리: 초기화 후 시작 / 계속 저장
+  const handleStartDialogConfirm = async (resetDb: boolean) => {
+    setShowStartDialog(false);
+    await runStartRecording(resetDb);
   };
 
   const handlePauseRecording = async () => {
@@ -276,6 +300,8 @@ export function FunctionButtonPanel({
       const response = await apiClient.stopRecording();
       if (!response.is_recording) {
         setIsRecording(false);
+        // 세션 종료 → 다음 시작 시 다시 DB 초기화 여부를 묻는다.
+        setRecipeSessionActive(false);
         // 타이머 종료 및 초기화
         setIsTimerRunning(false);
         setRemainingTime(0);
@@ -397,6 +423,7 @@ export function FunctionButtonPanel({
   ];
 
   return (
+    <>
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto">
       <div className="space-y-3">
         {buttons.map((button, index) => {
@@ -560,5 +587,55 @@ export function FunctionButtonPanel({
         </div>
       </div>
     </div>
+
+    {/* 레시피 시작 시 DB 초기화 선택 다이얼로그
+        App.tsx 래퍼의 transform: scale() 때문에 position:fixed가 뷰포트가 아닌 래퍼 기준이 되므로,
+        createPortal로 document.body에 렌더링하여 진짜 화면 중앙에 띄운다. */}
+    {showStartDialog && createPortal(
+      <div
+        className="flex items-center justify-center"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 50,
+          backgroundColor: 'rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'blur(2px)',
+        }}
+        onClick={() => setShowStartDialog(false)}
+      >
+        <div
+          className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 w-[420px] max-w-[90vw]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-lg font-semibold text-[#0A4D68] mb-2">레시피 시작</h3>
+          <p className="text-slate-600 mb-5 leading-relaxed">
+            데이터베이스를 <span className="font-semibold text-rose-600">초기화</span>하고 새로 시작할까요,
+            아니면 기존 데이터베이스에 이어서 저장할까요?
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => handleStartDialogConfirm(true)}
+              className="w-full py-3 px-4 rounded-xl text-white font-medium bg-gradient-to-r from-rose-600 to-rose-500 hover:shadow-lg active:scale-[0.98] transition-all"
+            >
+              초기화 후 새로 시작
+            </button>
+            <button
+              onClick={() => handleStartDialogConfirm(false)}
+              className="w-full py-3 px-4 rounded-xl text-white font-medium bg-gradient-to-r from-[#0A4D68] to-[#0A84FF] hover:shadow-lg active:scale-[0.98] transition-all"
+            >
+              기존 DB에 계속 저장
+            </button>
+            <button
+              onClick={() => setShowStartDialog(false)}
+              className="w-full py-3 px-4 rounded-xl text-slate-700 font-medium bg-slate-100 hover:bg-slate-200 active:scale-[0.98] transition-all"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
