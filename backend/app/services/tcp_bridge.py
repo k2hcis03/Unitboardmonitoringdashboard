@@ -201,35 +201,26 @@ class TCPBridgeService:
                 data = await reader.read(4096)
                 if not data:
                     break
-                
+
                 buffer += data
-                
-                # Simple delimiter handling (assuming JSON objects are sent line by line or delimited)
-                # In real stream, we might need length-prefix or looking for braces balance.
-                # For this MVP, assuming the Pi sends distinct packets or closes connection, 
-                # OR we try to decode continuously. 
-                # Let's assume delimiter is newline for robustness, or just try to decode the buffer.
-                
-                # Try to decode buffer
-                try:
-                    message_str = buffer.decode('utf-8')
-                    # This logic assumes one JSON per connection or newline delimited. 
-                    # If stuck together: "}{" -> invalid. 
-                    # For now, let's assume the buffer contains a complete JSON message 
-                    # or split by newline if stream.
-                    
-                    messages = message_str.strip().split('\n')
-                    for msg in messages:
-                        if not msg.strip(): continue
-                        await self.process_message(msg)
-                    
-                    # Reset buffer if successful (in a real stream, need to keep partial bytes)
-                    buffer = b"" 
-                    
-                except UnicodeDecodeError:
-                    pass # Wait for more data
-                except Exception as e:
-                    logger.error(f"Error processing stream: {e}")
+
+                # 라즈베리파이는 메시지 구분자(\n) 없이 JSON 객체를 연속 전송하며,
+                # 큰 SENSOR 패킷(>4096B)은 여러 read에 걸쳐 쪼개져 온다.
+                # _extract_json_objects가 버퍼 앞에서부터 완전한 JSON 객체를
+                # 가능한 만큼 떼어내고, 마지막 미완성 객체는 buffer에 남긴다.
+                objects, buffer = self._extract_json_objects(buffer)
+                for obj_str in objects:
+                    await self.process_message(obj_str)
+
+                # 안전장치: 스트림 정렬 오류로 버퍼가 무한정 쌓이며 아무 객체도
+                # 떼지 못하는 '영구 침묵' 상태 방지. SENSOR 패킷은 ~5KB이므로
+                # 64KB를 넘으면 비정상으로 보고 버퍼를 리셋(resync)한다.
+                if len(buffer) > 65536:
+                    logger.warning(
+                        f"Receiver buffer overflow ({len(buffer)} bytes) without "
+                        f"complete JSON — resyncing (data discarded)"
+                    )
+                    buffer = b""
 
         except Exception as e:
             logger.error(f"Receiver connection error: {e}")
@@ -242,6 +233,44 @@ class TCPBridgeService:
             await self._broadcast_connection_status()
             writer.close()
             await writer.wait_closed()
+
+    def _extract_json_objects(self, buffer: bytes):
+        """버퍼에서 완전한 JSON 객체 문자열들을 추출하고, 처리하지 못한
+        나머지 바이트를 반환한다.
+
+        구분자(\\n)가 있든 없든, 객체가 연속으로 붙어 오든(`}{`), 하나가 여러
+        read에 걸쳐 쪼개져 오든 모두 처리한다. json.JSONDecoder.raw_decode로
+        버퍼 앞에서부터 완전한 객체를 하나씩 떼어내고, 마지막 미완성 객체는
+        다음 read에서 이어붙이도록 그대로 남긴다.
+
+        Returns:
+            (objects, remaining): 완전한 JSON 객체 문자열 리스트와 남은 바이트.
+        """
+        try:
+            text = buffer.decode('utf-8')
+        except UnicodeDecodeError:
+            # 멀티바이트 문자 경계에서 잘림 — 더 읽어서 보완 (ASCII 페이로드에선 거의 없음)
+            return [], buffer
+
+        objects = []
+        decoder = json.JSONDecoder()
+        pos = 0
+        n = len(text)
+        while pos < n:
+            # 객체 사이의 공백/개행 건너뛰기 (raw_decode는 선행 공백을 처리하지 않음)
+            while pos < n and text[pos] in ' \t\r\n':
+                pos += 1
+            if pos >= n:
+                break
+            try:
+                _obj, end = decoder.raw_decode(text, pos)
+            except json.JSONDecodeError:
+                # pos부터는 아직 완전한 객체가 아님 — 다음 read 대기
+                break
+            objects.append(text[pos:end])
+            pos = end
+
+        return objects, text[pos:].encode('utf-8')
 
     async def process_message(self, json_str: str):
         """Parse and route the incoming JSON message."""
