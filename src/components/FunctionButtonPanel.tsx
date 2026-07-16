@@ -1,5 +1,5 @@
 import { Cpu, BookOpen, Play, Pause, Square, Download, LayoutDashboard, Settings2, Clock, Send } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { getTankIdForUnit, APP_VERSION } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -12,6 +12,25 @@ const formatTime = (seconds: number): string => {
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+// 유닛보드별 레시피/녹화 상태. 유닛을 전환해도 각 유닛이 자기 상태를 독립적으로 유지한다.
+interface UnitRecipeState {
+  selectedRecipe: string | null;   // 선택된 레시피 파일명
+  selectedFirmware: string | null; // 선택된 펌웨어 파일명
+  isRecording: boolean;            // 실행 중(일시정지 아님)
+  recipeSessionActive: boolean;    // 세션 진행 중(일시정지 포함). 처음 시작과 재시작 구분용
+  remainingTime: number;           // 남은 시간(초)
+  isTimerRunning: boolean;         // 타이머 진행 여부
+}
+
+const DEFAULT_RECIPE_STATE: UnitRecipeState = {
+  selectedRecipe: null,
+  selectedFirmware: null,
+  isRecording: false,
+  recipeSessionActive: false,
+  remainingTime: 0,
+  isTimerRunning: false,
 };
 
 interface FunctionButtonPanelProps {
@@ -28,57 +47,77 @@ export function FunctionButtonPanel({
   onViewModeChange
 }: FunctionButtonPanelProps) {
   const [showUnitSelector, setShowUnitSelector] = useState(false);
-  const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null);
-  const [selectedFirmware, setSelectedFirmware] = useState<string | null>(null);
-  
+
   const { lastMessage, sendMessage } = useWebSocket();
   const [isPiConnected, setIsPiConnected] = useState(false);
   const [firmwareVersion, setFirmwareVersion] = useState<string>('v0.0.0');
-  const [isRecording, setIsRecording] = useState(false);
-  // 레시피 세션이 진행 중인지 추적 (일시정지 상태도 포함). 처음 시작과 재시작을 구분하는 용도.
-  const [recipeSessionActive, setRecipeSessionActive] = useState(false);
-  // DB 초기화 선택 다이얼로그 표시 여부
+  // DB 초기화 선택 다이얼로그 표시 여부 및 대상 유닛
   const [showStartDialog, setShowStartDialog] = useState(false);
+  const [pendingStartUnitId, setPendingStartUnitId] = useState<number | null>(null);
   const [errorCode, setErrorCode] = useState<string>('0');
   const [showJsonPanel, setShowJsonPanel] = useState(false);
   const [jsonInput, setJsonInput] = useState<string>('');
   const [isSendingJson, setIsSendingJson] = useState(false);
 
-  // 레시피 타이머 관련 상태
-  const [remainingTime, setRemainingTime] = useState<number>(0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // 유닛보드별 레시피/녹화 상태 맵: { [unitId]: UnitRecipeState }
+  // 유닛을 전환하면 해당 유닛의 상태가 표시되어, 각 유닛이 독립적으로 자기 정보를 유지한다.
+  const [recipeStates, setRecipeStates] = useState<Record<number, UnitRecipeState>>({});
+  // 현재 선택된 유닛의 레시피 상태 (없으면 기본값)
+  const current = recipeStates[selectedUnitId] ?? DEFAULT_RECIPE_STATE;
 
-  // 프로그램 시작 시 항상 '레시피 시작' 상태로 시작
-  // 서버 상태와 관계없이 isRecording은 false로 유지
-  
-  // 레시피 타이머 useEffect
+  // 특정 유닛의 레시피 상태 부분 업데이트 헬퍼
+  const updateUnitRecipe = (unitId: number, updates: Partial<UnitRecipeState>) => {
+    setRecipeStates((prev) => ({
+      ...prev,
+      [unitId]: { ...(prev[unitId] ?? DEFAULT_RECIPE_STATE), ...updates },
+    }));
+  };
+
+  // 실행 중인 유닛이 하나라도 있는지 여부 (타이머 인터벌 생성/정리 트리거)
+  const anyTimerRunning = Object.values(recipeStates).some(
+    (s) => s.isTimerRunning && s.remainingTime > 0
+  );
+
+  // 레시피 타이머: 화면에 보이는 유닛뿐 아니라 실행 중인 '모든' 유닛의 남은 시간을
+  // 백그라운드에서 매초 감소시킨다. 유닛을 전환해도 각 유닛 타이머는 계속 진행된다.
   useEffect(() => {
-    if (isTimerRunning && remainingTime > 0) {
-      timerRef.current = setInterval(() => {
-        setRemainingTime((prev) => {
-          if (prev <= 1) {
-            // 타이머 종료
-            setIsTimerRunning(false);
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-              timerRef.current = null;
+    if (!anyTimerRunning) return;
+
+    const interval = setInterval(() => {
+      setRecipeStates((prev) => {
+        const next: Record<number, UnitRecipeState> = {};
+        const finishedUnits: number[] = [];
+        let changed = false;
+
+        for (const [key, s] of Object.entries(prev)) {
+          const unitId = Number(key);
+          if (s.isTimerRunning && s.remainingTime > 0) {
+            changed = true;
+            const remaining = s.remainingTime - 1;
+            if (remaining <= 0) {
+              finishedUnits.push(unitId);
+              next[unitId] = { ...s, remainingTime: 0, isTimerRunning: false };
+            } else {
+              next[unitId] = { ...s, remainingTime: remaining };
             }
-            alert('현재 레시피가 끝났습니다');
-            return 0;
+          } else {
+            next[unitId] = s;
           }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [isTimerRunning]);
+        }
+
+        // 종료된 유닛 알림은 상태 업데이트 밖에서 실행 (렌더 중 부작용 방지)
+        if (finishedUnits.length > 0) {
+          setTimeout(() => {
+            finishedUnits.forEach((u) => alert(`유닛 ${u + 1} 레시피가 끝났습니다`));
+          }, 0);
+        }
+
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [anyTimerRunning]);
 
   useEffect(() => {
     if (lastMessage?.type === 'SYSTEM_CONNECTION_STATUS') {
@@ -141,17 +180,20 @@ export function FunctionButtonPanel({
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // 비동기 처리 중 유닛이 바뀌어도 이 레시피는 선택 당시 유닛에 귀속되도록 캡처한다.
+    const unitId = selectedUnitId;
+
     try {
       // 파일 읽기
       const fileContent = await file.text();
-      
+
       // JSON 파싱
       let recipeData;
       try {
         recipeData = JSON.parse(fileContent);
       } catch (parseError) {
         alert('유효하지 않은 JSON 파일입니다.');
-        setSelectedRecipe(null);
+        updateUnitRecipe(unitId, { selectedRecipe: null });
         event.target.value = '';
         return;
       }
@@ -159,37 +201,38 @@ export function FunctionButtonPanel({
       // 레시피 데이터 검증 (CMD가 REF인지 확인)
       if (recipeData.CMD !== 'REF') {
         alert('유효하지 않은 레시피 파일입니다. CMD가 "REF"여야 합니다.');
-        setSelectedRecipe(null);
+        updateUnitRecipe(unitId, { selectedRecipe: null });
         event.target.value = '';
         return;
       }
 
       // 레시피 데이터를 라즈베리파이로 전송
       const result = await apiClient.sendRecipe(recipeData);
-      
+
       if (result.success) {
-        // 전송 성공 시에만 파일명 저장
-        setSelectedRecipe(file.name);
-        
         // 전체 시간 계산: STEP * DATA 개수
         const step = parseInt(recipeData.STEP) || 0;
         const dataCount = Array.isArray(recipeData.DATA) ? recipeData.DATA.length : 0;
         const totalTime = step * dataCount;
-        setRemainingTime(totalTime);
-        setIsTimerRunning(false); // 타이머는 아직 시작하지 않음
-        
+
+        // 전송 성공 시에만 해당 유닛에 파일명/남은 시간 저장 (타이머는 아직 시작하지 않음)
+        updateUnitRecipe(unitId, {
+          selectedRecipe: file.name,
+          remainingTime: totalTime,
+          isTimerRunning: false,
+        });
+
         console.log(`Recipe ${file.name} sent successfully. Total time: ${totalTime} seconds (${formatTime(totalTime)})`);
         alert(`레시피 "${file.name}" 전송 완료\n예상 소요 시간: ${formatTime(totalTime)}`);
       } else {
         console.error('Failed to send recipe:', result.error);
         alert(`레시피 전송 실패: ${result.error || '알 수 없는 오류'}`);
-        setSelectedRecipe(null);
-        setRemainingTime(0);
+        updateUnitRecipe(unitId, { selectedRecipe: null, remainingTime: 0 });
       }
     } catch (error) {
       console.error('Failed to process recipe file:', error);
       alert('레시피 파일 처리 중 오류가 발생했습니다.');
-      setSelectedRecipe(null);
+      updateUnitRecipe(unitId, { selectedRecipe: null });
     } finally {
       // 입력 초기화 (동일 파일 재선택 가능하게)
       event.target.value = '';
@@ -199,8 +242,9 @@ export function FunctionButtonPanel({
   const handleFirmwareSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setSelectedFirmware(file.name);
-      
+      const unitId = selectedUnitId;
+      updateUnitRecipe(unitId, { selectedFirmware: file.name });
+
       try {
         // 선택된 유닛보드 ID로 펌웨어 업데이트 요청 전송
         // 주의: 브라우저 환경에서는 보안상 전체 파일 경로(C:\path\to\file.bin)를 알 수 없습니다.
@@ -219,8 +263,8 @@ export function FunctionButtonPanel({
         // 웹 브라우저의 보안 정책으로 인해 실제 전체 경로(C:\...)는 JavaScript로 읽을 수 없습니다.
         // 따라서 파일 이름만이라도 정확히 전송합니다.
         // UNIT_TO_TANK_ID 매핑을 사용하여 unit_id 변환
-        const mappedUnitId = getTankIdForUnit(selectedUnitId);
-        console.log(`Firmware update request: Unit ${selectedUnitId} (mapped to ${mappedUnitId}), File ${file.name}`);
+        const mappedUnitId = getTankIdForUnit(unitId);
+        console.log(`Firmware update request: Unit ${unitId} (mapped to ${mappedUnitId}), File ${file.name}`);
         
         await apiClient.updateFirmware(mappedUnitId, file.name);
         
@@ -236,34 +280,46 @@ export function FunctionButtonPanel({
   };
 
   const handleStartRecording = async () => {
+    const unitId = selectedUnitId;
+    const unitState = recipeStates[unitId] ?? DEFAULT_RECIPE_STATE;
+
     // 레시피가 선택되지 않은 경우 메시지 표시
-    if (selectedRecipe === null) {
+    if (unitState.selectedRecipe === null) {
       alert('레시피를 선택하세요');
       return;
     }
 
     // 일시정지 후 재시작이면 묻지 않고 기존 DB에 이어서 저장
-    if (recipeSessionActive) {
-      await runStartRecording(false);
+    if (unitState.recipeSessionActive) {
+      await runStartRecording(unitId, false);
       return;
     }
 
-    // 처음 시작이면 DB 초기화 여부를 묻는 다이얼로그 표시
+    // 처음 시작이면 DB 초기화 여부를 묻는 다이얼로그 표시 (대상 유닛 기억)
+    setPendingStartUnitId(unitId);
     setShowStartDialog(true);
   };
 
-  // 실제 녹화 시작 요청. resetDb가 true면 백엔드에서 DB를 비우고 시작한다.
-  const runStartRecording = async (resetDb: boolean) => {
+  // 실제 녹화 시작 요청. resetDb가 true면 백엔드에서 해당 유닛 DB를 비우고 시작한다.
+  const runStartRecording = async (unitId: number, resetDb: boolean) => {
     try {
-      console.log(`Starting recording... (resetDb=${resetDb})`);
-      const response = await apiClient.startRecording(resetDb);
+      console.log(`Starting recording for unit ${unitId}... (resetDb=${resetDb})`);
+      const mappedUnitId = getTankIdForUnit(unitId);
+      const response = await apiClient.startRecording(mappedUnitId, resetDb);
       if (response.is_recording) {
-        setIsRecording(true);
-        setRecipeSessionActive(true);
-        // 타이머 시작
-        if (remainingTime > 0) {
-          setIsTimerRunning(true);
-        }
+        // 남은 시간이 있으면 타이머도 함께 시작
+        setRecipeStates((prev) => {
+          const s = prev[unitId] ?? DEFAULT_RECIPE_STATE;
+          return {
+            ...prev,
+            [unitId]: {
+              ...s,
+              isRecording: true,
+              recipeSessionActive: true,
+              isTimerRunning: s.remainingTime > 0,
+            },
+          };
+        });
         console.log(`Recording started (db_cleared=${response.db_cleared ?? false})`);
       }
     } catch (error) {
@@ -274,18 +330,21 @@ export function FunctionButtonPanel({
 
   // 다이얼로그 선택 처리: 초기화 후 시작 / 계속 저장
   const handleStartDialogConfirm = async (resetDb: boolean) => {
+    const unitId = pendingStartUnitId ?? selectedUnitId;
     setShowStartDialog(false);
-    await runStartRecording(resetDb);
+    setPendingStartUnitId(null);
+    await runStartRecording(unitId, resetDb);
   };
 
   const handlePauseRecording = async () => {
+    const unitId = selectedUnitId;
     try {
-      console.log('Pausing recording...');
-      const response = await apiClient.pauseRecording();
+      console.log(`Pausing recording for unit ${unitId}...`);
+      const mappedUnitId = getTankIdForUnit(unitId);
+      const response = await apiClient.pauseRecording(mappedUnitId);
       if (!response.is_recording) {
-        setIsRecording(false);
-        // 타이머 일시정지
-        setIsTimerRunning(false);
+        // 실행 중지 + 타이머 일시정지 (남은 시간은 유지)
+        updateUnitRecipe(unitId, { isRecording: false, isTimerRunning: false });
         console.log('Recording paused');
       }
     } catch (error) {
@@ -295,17 +354,20 @@ export function FunctionButtonPanel({
   };
 
   const handleStopRecording = async () => {
+    const unitId = selectedUnitId;
     try {
-      console.log('Stopping recording...');
-      const response = await apiClient.stopRecording();
+      console.log(`Stopping recording for unit ${unitId}...`);
+      const mappedUnitId = getTankIdForUnit(unitId);
+      const response = await apiClient.stopRecording(mappedUnitId);
       if (!response.is_recording) {
-        setIsRecording(false);
-        // 세션 종료 → 다음 시작 시 다시 DB 초기화 여부를 묻는다.
-        setRecipeSessionActive(false);
-        // 타이머 종료 및 초기화
-        setIsTimerRunning(false);
-        setRemainingTime(0);
-        setSelectedRecipe(null);
+        // 세션 종료 → 다음 시작 시 다시 DB 초기화 여부를 묻는다. 타이머/레시피 초기화.
+        updateUnitRecipe(unitId, {
+          isRecording: false,
+          recipeSessionActive: false,
+          isTimerRunning: false,
+          remainingTime: 0,
+          selectedRecipe: null,
+        });
         console.log('Recording stopped');
       }
     } catch (error) {
@@ -373,16 +435,16 @@ export function FunctionButtonPanel({
       label: '레시피 선택', 
       color: 'from-[#0A4D68] to-[#0A84FF]',
       onClick: () => document.getElementById('recipe-file-input')?.click(),
-      info: selectedRecipe,
+      info: current.selectedRecipe,
       disabled: false
     },
-    { 
-      icon: isRecording ? Pause : Play, 
-      label: isRecording ? '레시피 일시정지' : '레시피 시작', 
+    {
+      icon: current.isRecording ? Pause : Play,
+      label: current.isRecording ? '레시피 일시정지' : '레시피 시작',
       color: 'from-emerald-600 to-emerald-500',
-      onClick: isRecording ? handlePauseRecording : handleStartRecording,
+      onClick: current.isRecording ? handlePauseRecording : handleStartRecording,
       disabled: false,
-      visuallyDisabled: !isRecording && selectedRecipe === null
+      visuallyDisabled: !current.isRecording && current.selectedRecipe === null
     },
     { 
       icon: Square, 
@@ -404,7 +466,7 @@ export function FunctionButtonPanel({
       label: '펌웨어 업데이트', 
       color: 'from-[#0A4D68] to-[#0A84FF]',
       onClick: () => document.getElementById('firmware-file-input')?.click(),
-      info: selectedFirmware,
+      info: current.selectedFirmware,
       disabled: false
     },
     { 
@@ -567,19 +629,19 @@ export function FunctionButtonPanel({
             <span className="text-slate-500">프로그램 버전</span>
             <span className="text-slate-700">{APP_VERSION}</span>
           </div>
-          {/* 레시피 남은 시간 표시 */}
-          {remainingTime > 0 && (
+          {/* 레시피 남은 시간 표시 (현재 선택된 유닛 기준) */}
+          {current.remainingTime > 0 && (
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-slate-500" />
                 <span className="text-slate-500">남은 시간</span>
               </div>
               <div className="flex items-center gap-2">
-                {isTimerRunning && (
+                {current.isTimerRunning && (
                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                 )}
-                <span className={`font-mono text-lg ${isTimerRunning ? 'text-emerald-600' : 'text-slate-600'}`}>
-                  {formatTime(remainingTime)}
+                <span className={`font-mono text-lg ${current.isTimerRunning ? 'text-emerald-600' : 'text-slate-600'}`}>
+                  {formatTime(current.remainingTime)}
                 </span>
               </div>
             </div>

@@ -165,29 +165,35 @@ class APIClient {
 
   /**
    * DB 기록 시작 (STATE "Run" 전송)
+   * @param unitId 녹화를 시작할 유닛(탱크) ID (매핑된 TANK_ID)
+   * @param resetDb true면 해당 유닛의 기존 데이터를 초기화 후 시작
    */
-  async startRecording(resetDb: boolean = false): Promise<{ status: string, is_recording: boolean, db_cleared?: boolean }> {
-    return this.request<{ status: string, is_recording: boolean, db_cleared?: boolean }>('/api/recording/start', {
+  async startRecording(unitId: number, resetDb: boolean = false): Promise<{ status: string, is_recording: boolean, unit_id?: number, db_cleared?: boolean }> {
+    return this.request<{ status: string, is_recording: boolean, unit_id?: number, db_cleared?: boolean }>('/api/recording/start', {
       method: 'POST',
-      body: JSON.stringify({ reset_db: resetDb }),
+      body: JSON.stringify({ unit_id: unitId, reset_db: resetDb }),
     });
   }
 
   /**
    * DB 기록 일시정지 (STATE "Pause" 전송)
+   * @param unitId 일시정지할 유닛(탱크) ID (매핑된 TANK_ID)
    */
-  async pauseRecording(): Promise<{ status: string, is_recording: boolean }> {
-    return this.request<{ status: string, is_recording: boolean }>('/api/recording/pause', {
+  async pauseRecording(unitId: number): Promise<{ status: string, is_recording: boolean, unit_id?: number }> {
+    return this.request<{ status: string, is_recording: boolean, unit_id?: number }>('/api/recording/pause', {
       method: 'POST',
+      body: JSON.stringify({ unit_id: unitId }),
     });
   }
 
   /**
    * DB 기록 종료 (STATE "Stop" 전송)
+   * @param unitId 종료할 유닛(탱크) ID (매핑된 TANK_ID)
    */
-  async stopRecording(): Promise<{ status: string, is_recording: boolean }> {
-    return this.request<{ status: string, is_recording: boolean }>('/api/recording/stop', {
+  async stopRecording(unitId: number): Promise<{ status: string, is_recording: boolean, unit_id?: number }> {
+    return this.request<{ status: string, is_recording: boolean, unit_id?: number }>('/api/recording/stop', {
       method: 'POST',
+      body: JSON.stringify({ unit_id: unitId }),
     });
   }
 

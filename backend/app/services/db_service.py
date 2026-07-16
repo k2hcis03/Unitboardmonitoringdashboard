@@ -109,6 +109,27 @@ class DBService:
             logger.error(f"Failed to clear database: {e}")
             return False
 
+    async def clear_tank(self, tank_id) -> bool:
+        """특정 탱크(유닛)의 기록 데이터만 삭제한다.
+
+        여러 유닛이 동시에 녹화 중일 수 있으므로, 한 유닛을 '초기화 후 새로 시작'해도
+        다른 유닛의 데이터는 보존되어야 한다. readings/states는 tank_id 컬럼으로 필터해
+        해당 탱크의 행만 지운다. packets 행은 여러 탱크가 공유하며 조회 시 tank_id로 필터되므로
+        남겨두어도 무해하다.
+        """
+        try:
+            tank_id_str = str(tank_id)
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("PRAGMA foreign_keys = ON;")
+                await db.execute("DELETE FROM readings WHERE tank_id = ?", (tank_id_str,))
+                await db.execute("DELETE FROM states WHERE tank_id = ?", (tank_id_str,))
+                await db.commit()
+            logger.info(f"Database cleared for tank_id={tank_id_str}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to clear tank {tank_id}: {e}")
+            return False
+
     async def save_packet(self, order_num: int, created_at: str, readings: List[Dict], states: List[Dict]):
         """Save a complete packet with its readings and states transactionally."""
         try:
