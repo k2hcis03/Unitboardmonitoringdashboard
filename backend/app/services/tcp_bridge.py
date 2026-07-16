@@ -425,10 +425,12 @@ class TCPBridgeService:
         """
         Send firmware update command with file path.
         """
+        logger.info(f"[send_firmware] 시작: unit_id={unit_id}, file_path={file_path}")
+
         # Load configuration from sys.ini
         config = configparser.ConfigParser()
         ini_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ini', 'sys.ini')
-        
+
         try:
             config.read(ini_path)
             url = config.get('FIRMWARE_UPDATE', 'URL', fallback="http://172.30.1.100:9001/upload")
@@ -440,7 +442,9 @@ class TCPBridgeService:
             else:  # Linux (Raspberry Pi)
                 default_dir = "/home/pi/Projects/cosmo-m/firmware/"
                 firmware_dir = config.get('FIRMWARE_UPDATE', 'DIR_LINUX', fallback=default_dir)
-                
+
+            logger.info(f"[send_firmware] 1단계 설정 로드 완료: url={url}, firmware_dir={firmware_dir}")
+
         except Exception as e:
             logger.error(f"Failed to load config from {ini_path}: {e}")
             # Fallback values
@@ -454,30 +458,48 @@ class TCPBridgeService:
             # 파일이 존재하는지 확인하고 업로드 시도
             # file_path가 로컬 서버(백엔드가 실행중인 PC)의 경로라면 직접 읽을 수 있음
             full_path = os.path.join(firmware_dir, file_path)
-            with open(full_path, "rb") as f:
-                files = {"file": (file_path, f)}
-                response = requests.post(url, files=files)
-                response.raise_for_status() # Check for HTTP errors
-                logger.info(f"File uploaded successfully: {response.text}")
+            logger.info(f"[send_firmware] 2단계 펌웨어 파일 업로드 시도: {full_path} -> {url}")
+
+            # requests.post는 동기 blocking 호출이므로 asyncio.to_thread로 별도 스레드에서 실행
+            # → 서버 무응답 시에도 이벤트 루프(다른 명령/WebSocket/센서 수신)가 멈추지 않음
+            # timeout=5로 서버가 죽어 있으면 빠르게 실패하도록 설정
+            def _upload():
+                with open(full_path, "rb") as f:
+                    files = {"file": (file_path, f)}
+                    resp = requests.post(url, files=files, timeout=5)
+                    resp.raise_for_status()  # Check for HTTP errors
+                    return resp
+
+            response = await asyncio.to_thread(_upload)
+            logger.info(f"[send_firmware] 2단계 업로드 성공: status={response.status_code}, resp={response.text[:200]}")
         except FileNotFoundError:
-             logger.error(f"Firmware file not found at: {full_path}")
+             logger.error(f"[send_firmware] 2단계 실패: 펌웨어 파일 없음 -> {full_path}")
              # 파일이 없더라도 명령은 보낼지, 아니면 중단할지 결정 필요.
              # 여기서는 로그만 남기고 일단 진행 (또는 리턴 False)
              return False
         except Exception as e:
-            logger.error(f"Failed to upload firmware file: {e}")
+            logger.error(f"[send_firmware] 2단계 실패: 펌웨어 파일 업로드 오류: {e}", exc_info=True)
             return False
 
         self._command_idx += 1
-        packet = CommandPacketFirmware(
-            cmd="FIRMWARE_UPDATE",
-            unit_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
-            idx=self._command_idx,
-            file="/home/pi/Projects/cosmo-m/firmware/firmware.bin", # 라즈베리파이 펌웨어 전체 경로 포함
-            send=False
-        )
-        logger.info("Command sent successfully")
-        return await self.send_command(packet)
+        try:
+            packet = CommandPacketFirmware(
+                cmd="FIRMWARE_UPDATE",
+                unit_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
+                tank_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
+                idx=self._command_idx,
+                file="/home/pi/Projects/cosmo-m/firmware/firmware.bin", # 라즈베리파이 펌웨어 전체 경로 포함
+                send=False
+            )
+            logger.info(f"[send_firmware] 3단계 FIRMWARE_UPDATE 패킷 생성 완료: idx={packet.idx}, unit_id={packet.unit_id}, tank_id={packet.tank_id}")
+        except Exception as e:
+            logger.error(f"[send_firmware] 3단계 실패: 패킷 생성 오류: {e}", exc_info=True)
+            return False
+
+        # 4단계: FIRMWARE_UPDATE 패킷 전송 (실제 전송 결과를 로그로 남긴다)
+        result = await self.send_command(packet)
+        logger.info(f"[send_firmware] 4단계 FIRMWARE_UPDATE 패킷 전송 결과: {result}")
+        return result
 
     async def send_recipe(self, recipe_data: dict) -> bool:
         """
