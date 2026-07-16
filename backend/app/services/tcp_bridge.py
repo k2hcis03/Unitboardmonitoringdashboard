@@ -484,34 +484,61 @@ class TCPBridgeService:
         Send recipe (REF) command to the connected Pi.
         recipe_data should be the JSON content from reference file.
         """
-        try:
-            # 레시피 전송 성공 후 Initial 상태 전송
-            await self.send_state_command("Initial")
-            logger.info("Sent Initial state")
+        # 수신한 레시피 데이터 요약 로그 (전송 시작 시점)
+        data_count = len(recipe_data.get("DATA", []))
+        logger.info(
+            f"[send_recipe] 시작: IDX={recipe_data.get('IDX')}, "
+            f"TANK_ID={recipe_data.get('TANK_ID')}, "
+            f"selected_unit_id={self._selected_unit_id}, "
+            f"STAGE={recipe_data.get('STAGE')}, STEP={recipe_data.get('STEP')}, "
+            f"DATA 항목 수={data_count}"
+        )
 
-            # Parse DATA array into RecipeDataItem objects
+        try:
+            # 1단계: 레시피 전송 전 Initial 상태 전송
+            initial_ok = await self.send_state_command("Initial")
+            logger.info(f"[send_recipe] 1단계 Initial 상태 전송 결과: {initial_ok}")
+            if not initial_ok:
+                logger.warning("[send_recipe] Initial 상태 전송 실패 (연결 문제 가능성) - 레시피 전송 계속 진행")
+
+            # 2단계: DATA 배열을 RecipeDataItem 객체로 파싱
             data_items = []
-            for item_dict in recipe_data.get("DATA", []):
-                data_items.append(RecipeDataItem(**item_dict))
-            
-            # Create CommandPacketRef from recipe data
+            for i, item_dict in enumerate(recipe_data.get("DATA", [])):
+                try:
+                    data_items.append(RecipeDataItem(**item_dict))
+                except Exception as item_err:
+                    # 어떤 항목/필드에서 파싱이 실패했는지 정확히 남김
+                    logger.error(
+                        f"[send_recipe] 2단계 DATA[{i}] 파싱 실패: {item_err} / 원본 항목={item_dict}"
+                    )
+                    raise
+            logger.info(f"[send_recipe] 2단계 DATA 파싱 완료: {len(data_items)}개")
+
+            # 3단계: 레시피 데이터로 CommandPacketRef 생성
             packet = CommandPacketRef(
                 cmd="REF",
                 idx=recipe_data.get("IDX", str(self._command_idx)),
                 # tank_id= recipe_data.get("TANK_ID", "100"),
                 # 선택된 유닛보드 ID가 이미 매핑된 TANK_ID이므로 그대로 사용
+                # UNIT_ID/TANK_ID는 다른 명령어와 동일하게 매핑된 TANK_ID 값을 사용
                 tank_id= str(self._selected_unit_id),
+                unit_id= str(self._selected_unit_id),
                 stage=recipe_data.get("STAGE", "0"),
                 step=recipe_data.get("STEP", "3600"),
                 data=data_items,
                 send=False
             )
+            logger.info(f"[send_recipe] 3단계 REF 패킷 생성 완료: idx={packet.idx}, tank_id={packet.tank_id}")
             self._command_idx += 1
+
+            # 4단계: REF 패킷 전송
             result = await self.send_command(packet)
+            logger.info(f"[send_recipe] 4단계 REF 패킷 전송 결과: {result}")
 
             return result
         except Exception as e:
-            logger.error(f"Failed to create recipe packet: {e}")
+            # exc_info=True 로 전체 트레이스백을 남겨 원인 파악을 돕는다
+            logger.error(f"[send_recipe] 레시피 패킷 처리 실패: {e}", exc_info=True)
             return False
 
     async def send_state_command(self, status: str, stage: int = 100, unit_id: Optional[int] = None) -> bool:
@@ -541,6 +568,8 @@ class TCPBridgeService:
                 item_status = self._tank_states.get(tank_id, "None")
                 
                 state_data = StateDataItem(
+                    # UNIT_ID/TANK_ID는 다른 명령어와 동일하게 매핑된 TANK_ID 값을 사용
+                    UNIT_ID=str(tank_id),
                     TANK_ID=str(tank_id),
                     STAGE=stage,
                     STATUS=item_status
@@ -579,7 +608,7 @@ class TCPBridgeService:
                     logger.info(f"Sent command: {packet.cmd}")
                 return True
             except Exception as e:
-                logger.error(f"Failed to send command: {e}")
+                logger.error(f"Failed to send command (cmd={getattr(packet, 'cmd', '?')}): {e}", exc_info=True)
                 self._sender_writer = None # Invalidate
                 return False
 
