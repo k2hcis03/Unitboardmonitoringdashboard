@@ -39,9 +39,9 @@ class TCPBridgeService:
         # 현재 활성 수신 연결 추적 (재연결 시 이전 핸들러가 상태를 덮어쓰는 것을 방지)
         self._receiver_writer: Optional[asyncio.StreamWriter] = None
         
-        # 녹화 상태는 전역 플래그가 아니라 아래 _tank_states(탱크별 상태)로 판단한다.
-        # 상태가 "Run"인 탱크만 DB에 저장된다. (get_recording_tanks 참조)
-
+        # Recording status
+        self.is_recording = False
+        
         # Command index counter
         self._command_idx = 0
 
@@ -73,6 +73,7 @@ class TCPBridgeService:
                  asyncio.create_task(self.send_command(CommandPacketGetVersion(
                     cmd='GET_VERSION',
                     unit_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
+                    tank_id=str(unit_id),  # 프론트엔드에서 이미 매핑된 TANK_ID 값을 문자열로 전송
                     idx=str(idx),
                     send=True,
                 )))
@@ -144,26 +145,19 @@ class TCPBridgeService:
         # We do NOT await serve_forever() here because it would block Litestar startup.
         # The servers are attached to the loop now.
 
-    def get_selected_unit_id(self) -> int:
-        """현재 선택된 유닛(탱크) ID 반환."""
-        return self._selected_unit_id
+    def start_recording(self):
+        """Start recording sensor data to DB."""
+        logger.info("Starting DB recording...")
+        self.is_recording = True
 
-    def get_recording_tanks(self) -> set:
-        """현재 녹화(저장) 대상 탱크 집합.
+    def stop_recording(self):
+        """Stop recording sensor data to DB."""
+        logger.info("Stopping DB recording...")
+        self.is_recording = False
 
-        전역 플래그 대신 탱크별 상태를 기준으로 판단한다.
-        상태가 "Run"인 탱크만 DB에 저장한다. (일시정지/종료된 탱크는 저장 제외)
-        """
-        return {tank_id for tank_id, status in self._tank_states.items() if status == "Run"}
-
-    def is_tank_recording(self, tank_id: int) -> bool:
-        """특정 탱크가 현재 녹화 중인지 여부."""
-        return self._tank_states.get(tank_id) == "Run"
-
-    def get_recording_status(self) -> dict:
-        """전체 녹화 상태 반환: 녹화 중인 탱크 목록과 하나라도 녹화 중인지 여부."""
-        tanks = sorted(self.get_recording_tanks())
-        return {"is_recording": len(tanks) > 0, "recording_units": tanks}
+    def get_recording_status(self) -> bool:
+        """Get current recording status."""
+        return self.is_recording
 
     async def stop(self):
         """Stop TCP servers"""
@@ -315,28 +309,16 @@ class TCPBridgeService:
             await ws_manager.broadcast(update_msg)
             logger.debug(f"Broadcasted sensor update for Order={packet.order}")
             
-            # 탱크별 녹화: 상태가 "Run"인 탱크의 데이터만 저장한다.
-            # 여러 유닛이 동시에 녹화 중일 수 있고, 일시정지/종료된 유닛은 저장에서 제외된다.
-            recording_tanks = self.get_recording_tanks()
-            if recording_tanks:
+            # Save to DB if recording
+            if self.is_recording:
                 # 저장 시각은 라즈베리파이가 보낸 패킷의 DATE/TIME이 아니라
                 # 백엔드(PC)의 현재 시각을 사용한다. (Pi 시계 오차와 무관하게 정확한 시간 기록)
                 created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                # Run 상태인 탱크의 readings/states만 필터링해 저장
-                readings = [
-                    r.model_dump(by_alias=True) for r in packet.values
-                    if int(r.tank_id) in recording_tanks
-                ]
-                states = [
-                    s.model_dump(by_alias=True) for s in packet.state
-                    if int(s.tank_id) in recording_tanks
-                ]
-
-                # 필터 결과가 비어 있으면 저장하지 않는다 (해당 탱크 데이터가 패킷에 없을 때)
-                if not readings and not states:
-                    return
-
+                
+                # Convert models to dicts for DB service
+                readings = [r.model_dump(by_alias=True) for r in packet.values]
+                states = [s.model_dump(by_alias=True) for s in packet.state]
+                
                 # Async save (fire and forget or await? await is safer for order but slower)
                 # Requirement: "모든 저장은 비동기(Async)로 수행하여 메인 통신 루프를 차단하지 않아야 함."
                 # aiosqlite is async, so awaiting it yields control. 

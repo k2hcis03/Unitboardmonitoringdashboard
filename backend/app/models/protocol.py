@@ -72,6 +72,7 @@ class ControlValue(BaseModel):
 
 class CommandPacket(BaseModel):
     cmd: str = Field(..., alias="CMD")
+    t_id: Union[str, int] = Field(..., alias="UNIT_ID")
     idx: Union[str, int] = Field(..., alias="IDX")
     tank_id: Union[str, int] = Field(..., alias="TANK_ID")
     ctrl: List[ControlValue] = Field(..., alias="CTRL")
@@ -114,6 +115,7 @@ class CommandPacketFirmware(BaseModel):
     cmd: str = Field("FW_UPDATE", alias="CMD")
     unit_id: Union[str, int] = Field(..., alias="UNIT_ID")
     idx: Union[str, int] = Field(..., alias="IDX")
+    tank_id: Union[str, int] = Field(..., alias="TANK_ID")
     file: str = Field(..., alias="FILE")
     send: bool = Field(False, alias="SEND")
     class Config:
@@ -123,6 +125,7 @@ class CommandPacketGetVersion(BaseModel):
     cmd: str = Field("GET_VERSION", alias="CMD")
     unit_id: Union[str, int] = Field(..., alias="UNIT_ID")
     idx: Union[str, int] = Field(..., alias="IDX")
+    tank_id: Union[str, int] = Field(..., alias="TANK_ID")
     send: bool = Field(False, alias="SEND")
     class Config:
         populate_by_name = True
@@ -139,6 +142,7 @@ class RecipeDataItem(BaseModel):
 
 class CommandPacketRef(BaseModel):
     cmd: str = Field("REF", alias="CMD")
+    unit_id: Union[str, int] = Field(..., alias="UNIT_ID")
     idx: Union[str, int] = Field(..., alias="IDX")
     tank_id: Union[str, int] = Field(..., alias="TANK_ID")
     stage: Union[str, int] = Field(..., alias="STAGE")
@@ -150,6 +154,7 @@ class CommandPacketRef(BaseModel):
         populate_by_name = True
 
 class StateDataItem(BaseModel):
+    unit_id: Union[str, int] = Field(..., alias="UNIT_ID")
     tank_id: Union[str, int] = Field(..., alias="TANK_ID")
     stage: int = Field(..., alias="STAGE")
     status: str = Field(..., alias="STATUS")
