@@ -1,4 +1,4 @@
-import { Thermometer, Droplets, Wind, Gauge, Activity, Scale } from 'lucide-react';
+import { Thermometer, ThermometerSun, Droplets, Wind, Gauge, Activity, Scale } from 'lucide-react';
 import React, { useEffect, useState, useMemo } from 'react';
 import { getTankIdForUnit } from '../config';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -74,6 +74,8 @@ export function StatusMonitoringCard({ selectedUnitId }: StatusMonitoringCardPro
     { icon: Thermometer, name: '아날로그6', value: getValue(1105, '0.0'), unit: '°C' },
     { icon: Thermometer, name: '아날로그7', value: getValue(1106, '0.0'), unit: '°C' },
     { icon: Thermometer, name: '아날로그8', value: getValue(1107, '0.0'), unit: '°C' },
+    { icon: ThermometerSun, name: '외부 온도센서', value: getValue(1110, '0.0'), unit: '°C' },
+    { icon: Droplets, name: '습도센서', value: getValue(1200, '0.0'), unit: '%' },
     { icon: Droplets, name: 'pH 센서', value: getValue(1800, '0.0'), unit: 'pH' },
     { icon: Wind, name: 'CO₂ 센서', value: getValue(1300, '0.0'), unit: 'ppm' },
     { icon: Gauge, name: '당도 센서', value: getValue(1700, '0.0'), unit: 'Brix' }, 
